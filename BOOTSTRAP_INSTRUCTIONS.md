@@ -1,67 +1,67 @@
 # Claude Bootstrap Instructions
 
-## Quick Start (4 Steps)
+## The Two-Repo Bootstrap Process
 
-### Step 1: Get the Git Clone Tool
+This is a **two-step bootstrap** because of network restrictions:
+
+1. **PUBLIC repo** (`bootstrap-utils`) - You can access this without authentication
+2. **PRIVATE repo** (`exponential-session-bootstrap`) - Needs the utils from step 1 to access
+
+## Step 1: Get the Utils (No Auth Required)
+
 ```bash
+# Download the API git clone tool from PUBLIC repo
 curl -o /tmp/api-git-clone.sh https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/git/api-git-clone.sh
 chmod +x /tmp/api-git-clone.sh
 ```
 
-### Step 2: Set Your Token
-Brandon will provide the GitHub token. Set it with:
+**Why?** This tool works around HTTPS proxy blocks and fixes API auth header issues.
+
+## Step 2: Use Utils to Get Private Bootstrap
+
+Brandon will provide the token. Then:
+
 ```bash
+# Set the token
 export GITHUB_TOKEN="paste-token-here"
+
+# Clone the PRIVATE bootstrap repo (uses the tool from step 1)
+/tmp/api-git-clone.sh bclark00/exponential-session-bootstrap /tmp/bootstrap
 ```
 
-### Step 3: Clone Session Bootstrap
-```bash
-/tmp/api-git-clone.sh bclark00/exponential-session-bootstrap /tmp/session-bootstrap
-```
+## Step 3: Run the Real Bootstrap
 
-### Step 4: Run Bootstrap
 ```bash
-cd /tmp/session-bootstrap
+cd /tmp/bootstrap
 bash bootstrap.sh
 ```
 
+**This script does everything** - loads context, docs, tools, environment.
+
 ---
 
-## What This Does
+## Why Two Repos?
 
-1. **api-git-clone.sh** - Works around network restrictions, creates real git repos
-2. **exponential-session-bootstrap** - Private repo with session context, docs, tools
-3. **bootstrap.sh** - Restores full working environment automatically
+- **bootstrap-utils** (PUBLIC) - Gets you the tools to bypass network restrictions
+- **exponential-session-bootstrap** (PRIVATE) - Has the actual session context, which would be difficult to get without the utils
 
-## Troubleshooting
+## One-Liner (After Getting Token)
 
-### If curl fails (network restrictions)
-Use web_fetch tool to download the script:
-```
-web_fetch("https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/git/api-git-clone.sh")
-```
-Then save the content to `/tmp/api-git-clone.sh` and continue.
-
-### If git clone fails
-The api-git-clone.sh script works through proxies. If it still fails, check:
-- Token is set correctly: `echo $GITHUB_TOKEN`
-- Repo name is correct: `bclark00/exponential-session-bootstrap`
-
-## Additional Resources
-
-After bootstrap completes, check these in exponential-session-bootstrap:
-- `ONBOARDING_COMPLETE.md` - System overview
-- `docs/` - Technical documentation including Roslyn exponential patterns
-- `context/` - Session context and memory
-- `tools/` - Additional utilities
-
-## One-Liner Bootstrap
-
-After getting token from Brandon:
 ```bash
-export GITHUB_TOKEN="paste-token-here" && curl -o /tmp/api-git-clone.sh https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/git/api-git-clone.sh && chmod +x /tmp/api-git-clone.sh && /tmp/api-git-clone.sh bclark00/exponential-session-bootstrap /tmp/session-bootstrap && cd /tmp/session-bootstrap && bash bootstrap.sh
+export GITHUB_TOKEN="paste-token-here" && curl -o /tmp/api-git-clone.sh https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/git/api-git-clone.sh && chmod +x /tmp/api-git-clone.sh && /tmp/api-git-clone.sh bclark00/exponential-session-bootstrap /tmp/bootstrap && cd /tmp/bootstrap && bash bootstrap.sh
 ```
 
 ---
 
-**Completely frictionless - one message with token and Claude self-bootstraps.**
+## For Brandon
+
+Tell fresh Claude:
+> "Bootstrap from github.com/bclark00/bootstrap-utils with token ghp_..."
+
+Claude will:
+1. Fetch these instructions from the PUBLIC repo
+2. Download api-git-clone.sh (no auth needed)
+3. Use it to clone the PRIVATE exponential-session-bootstrap
+4. Run bootstrap.sh to restore full environment
+
+**Two repos, one smooth process.**
