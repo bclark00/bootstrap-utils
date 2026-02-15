@@ -3,7 +3,7 @@
 
 REPO="$1"
 TARGET_DIR="$2"
-TOKEN="YOUR_GITHUB_TOKEN_HERE"
+TOKEN="${GITHUB_TOKEN}"
 
 if [ -z "$REPO" ]; then
     echo "Usage: $0 owner/repo [target-dir]"
@@ -32,7 +32,6 @@ COMMITS=$(curl -s -H "Authorization: Bearer $TOKEN" \
     "https://api.github.com/repos/$OWNER/$REPO_NAME/commits?sha=$DEFAULT_BRANCH&per_page=1")
 
 HEAD_SHA=$(echo "$COMMITS" | grep -o '"sha":"[^"]*"' | head -1 | cut -d'"' -f4)
-TREE_SHA=$(echo "$COMMITS" | grep -o '"tree":{"sha":"[^"]*"' | cut -d'"' -f4)
 echo "✓ HEAD: ${HEAD_SHA:0:7}"
 
 # Download repo as ZIP
@@ -45,25 +44,29 @@ curl -s -L -H "Authorization: Bearer $TOKEN" \
 # Extract
 echo "[4/5] Extracting files..."
 cd "$TARGET_DIR"
-unzip -q repo.zip
+unzip -q repo.zip 2>/dev/null
 rm repo.zip
 # Move files from subdirectory to root
-SUBDIR=$(ls -d *-*/)
-mv "$SUBDIR"* . 2>/dev/null
-mv "$SUBDIR".* . 2>/dev/null
-rmdir "$SUBDIR"
+SUBDIR=$(ls -d *-*/ 2>/dev/null | head -1)
+if [ -n "$SUBDIR" ]; then
+    mv "$SUBDIR"* . 2>/dev/null
+    mv "$SUBDIR".* . 2>/dev/null
+    rmdir "$SUBDIR" 2>/dev/null
+fi
 
-FILE_COUNT=$(find . -type f | wc -l)
+FILE_COUNT=$(find . -type f -not -path './.git/*' | wc -l)
 echo "✓ Extracted $FILE_COUNT files"
 
 # Initialize git
 echo "[5/5] Initializing git repository..."
+git config --global user.email "bclark00@gmail.com" 2>/dev/null
+git config --global user.name "Brandon Clark" 2>/dev/null
 git init -q
 git remote add origin "https://github.com/$OWNER/$REPO_NAME.git"
 git remote set-url --push origin "https://$TOKEN@github.com/$OWNER/$REPO_NAME.git"
-git add .
-git commit -q -m "Clone from GitHub API (HEAD: $HEAD_SHA)"
-git branch -M "$DEFAULT_BRANCH"
+git add . 2>/dev/null
+git commit -q -m "Clone from GitHub API (HEAD: $HEAD_SHA)" 2>/dev/null
+git branch -M "$DEFAULT_BRANCH" 2>/dev/null
 
 echo ""
 echo "✅ Clone complete!"
