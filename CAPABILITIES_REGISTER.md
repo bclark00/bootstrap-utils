@@ -1,14 +1,33 @@
-# Capabilities Register - 5-Layer Enforcement Tracking
-## Verifiable Solution Memory Enforcement
+# Capabilities Register v2.0 - With Dependency Graph
+## Verifiable Solution Memory Enforcement + Dependency Tracking
 
-**Purpose**: Track enforcement layers for every capability/solution  
-**Requirement**: Minimum 3/5 layers to mark COMPLETE  
+**Purpose**: Track enforcement layers AND dependencies for every capability  
+**Requirement**: Minimum 3/5 layers + dependency awareness  
 **Date**: February 15, 2026  
+**Version**: 2.0 (Added dependency graph)  
 **Copyright**: © 2025-2026 Brandon Clark. All Rights Reserved.
 
 ---
 
-## Register Format
+## Key Enhancement: Dependency Graph
+
+**Problem**: Modifying one capability can break others  
+**Solution**: Track dependencies and warn of side effects
+
+**Example**:
+```
+Repository Router depends on:
+  - Diamond Lattice AST (for analysis)
+  - Bootstrap (for discovery)
+  
+If we modify Diamond Lattice:
+  → Warning: Repository Router may be affected
+  → Check: Router still works correctly
+```
+
+---
+
+## Enhanced Register Format
 
 ```
 Capability Name
@@ -23,6 +42,11 @@ Capability Name
 │   ├── Layer 4: Discovery Paths          [✅|❌]
 │   └── Layer 5: Self-Verification        [✅|❌]
 │
+├── Dependencies:
+│   ├── Requires: [Capabilities this depends on]
+│   ├── Required By: [Capabilities that depend on this]
+│   └── Side Effects: [What breaks if this changes]
+│
 ├── Score: [X/5 layers]
 ├── Discovery Keywords: [Terms that should trigger this]
 └── Verification Test: [How to test it works in next session]
@@ -30,7 +54,44 @@ Capability Name
 
 ---
 
-## CURRENT CAPABILITIES (February 15, 2026)
+## DEPENDENCY GRAPH VISUALIZATION
+
+```
+                    ┌─────────────────────┐
+                    │   Meta-Protocol     │
+                    │   (CAP-007)         │
+                    │   Foundation        │
+                    └──────────┬──────────┘
+                               │
+                ┌──────────────┼──────────────┐
+                │              │              │
+         ┌──────▼──────┐ ┌────▼─────┐ ┌─────▼──────┐
+         │ Capabilities│ │Bootstrap │ │  Exhaustive│
+         │  Register   │ │  Utils   │ │   Search   │
+         │  (CAP-008)  │ │ (CAP-009)│ │  (CAP-001) │
+         └──────┬──────┘ └────┬─────┘ └─────┬──────┘
+                │             │              │
+                └─────────────┼──────────────┘
+                              │
+                   ┌──────────┼──────────┐
+                   │          │          │
+            ┌──────▼──┐  ┌───▼────┐  ┌──▼───────┐
+            │ Repo    │  │Diamond │  │  Domain  │
+            │ Router  │  │Lattice │  │   DAL    │
+            │(CAP-002)│  │(CAP-004│  │(CAP-003) │
+            └──────┬──┘  └───┬────┘  └──────────┘
+                   │         │
+                   └────┬────┘
+                        │
+                 ┌──────▼──────┐
+                 │ QuartzMemory│
+                 │  (CAP-005)  │
+                 └─────────────┘
+```
+
+---
+
+## CURRENT CAPABILITIES (with Dependencies)
 
 ### CAP-001: Exhaustive Search Protocol
 **Problem**: Missing code when it exists (shallow searches)  
@@ -38,16 +99,21 @@ Capability Name
 **Created**: 2026-02-15
 
 **Enforcement Layers**:
-- ✅ **Layer 1: Bootstrap** - In bootstrap-utils repo (always loaded)
-- ✅ **Layer 2: Triggers** - Banned phrases: "not found", "doesn't exist" without protocol
+- ✅ **Layer 1: Bootstrap** - In bootstrap-utils repo
+- ✅ **Layer 2: Triggers** - Banned phrases without protocol
 - ✅ **Layer 3: Red Flags** - Any grep match forces deeper search
-- ✅ **Layer 4: Discovery** - 3 document locations (bootstrap, genesis-docs, illuminaughty correction)
-- ✅ **Layer 5: Verification** - Self-check before using forbidden phrases
+- ✅ **Layer 4: Discovery** - 3 document locations
+- ✅ **Layer 5: Verification** - Self-check before forbidden phrases
+
+**Dependencies**:
+- **Requires**: CAP-009 (Bootstrap Utils - for loading)
+- **Required By**: CAP-002 (Repo Router - for code discovery)
+- **Side Effects**: 
+  - Modifying search levels affects all code discovery
+  - Changing red flags affects what gets investigated
 
 **Score**: 5/5 ✅  
 **Status**: COMPLETE ✅  
-**Keywords**: search, code, find, exists, repository, grep  
-**Test**: Next session - search for code and verify protocol triggers
 
 ---
 
@@ -60,20 +126,23 @@ Capability Name
 - ❌ **Layer 1: Bootstrap** - Not in bootstrap checklist
 - ❌ **Layer 2: Triggers** - No defined trigger phrases
 - ❌ **Layer 3: Red Flags** - No enforcement mechanisms
-- ✅ **Layer 4: Discovery** - In memory #30, GitHub repo exists
-- ❌ **Layer 5: Verification** - No self-checking mechanism
+- ✅ **Layer 4: Discovery** - In memory #30, GitHub repo
+- ❌ **Layer 5: Verification** - No self-checking
+
+**Dependencies**:
+- **Requires**: 
+  - CAP-001 (Exhaustive Search - for finding existing repos)
+  - CAP-004 (Diamond Lattice - for semantic analysis)
+  - CAP-009 (Bootstrap - for discovery)
+- **Required By**: None yet
+- **Side Effects**:
+  - Router decisions affect code organization
+  - Repository profiles must stay current
+  - Broken router → code goes to wrong locations
 
 **Score**: 1/5 ⚠️  
 **Status**: INCOMPLETE ⚠️  
-**Keywords**: repository, routing, where commit, new code, organization  
-**Test**: Not testable - insufficient enforcement
-
-**Required Actions**:
-1. Add to bootstrap checklist: "Before creating files, check repo router"
-2. Define trigger: "where should this code go?" → invoke router
-3. Add red flag: Creating new repo without router check = warning
-4. Add self-verification: Router logs all decisions
-5. Cross-reference in other docs
+**Risk Level**: HIGH (many dependencies, low enforcement)
 
 ---
 
@@ -83,75 +152,83 @@ Capability Name
 **Created**: 2026-02-15
 
 **Enforcement Layers**:
-- ❌ **Layer 1: Bootstrap** - Not referenced in bootstrap
-- ❌ **Layer 2: Triggers** - No defined usage triggers
-- ❌ **Layer 3: Red Flags** - No enforcement for when to use
-- ✅ **Layer 4: Discovery** - GitHub repo, complete docs, in session summary
-- ❌ **Layer 5: Verification** - No usage verification
+- ❌ **Layer 1: Bootstrap**
+- ❌ **Layer 2: Triggers**
+- ❌ **Layer 3: Red Flags**
+- ✅ **Layer 4: Discovery** - GitHub repo, docs
+- ❌ **Layer 5: Verification**
+
+**Dependencies**:
+- **Requires**: CAP-009 (Bootstrap - for awareness)
+- **Required By**: 
+  - CAP-005 (QuartzMemory - contamination prevention)
+  - Any multi-agent patterns
+- **Side Effects**:
+  - Changing isolation boundaries affects all multi-agent work
+  - Pattern reuse rules affect architecture decisions
 
 **Score**: 1/5 ⚠️  
 **Status**: INCOMPLETE ⚠️  
-**Keywords**: domain, contamination, pattern, multi-agent, cross-domain  
-**Test**: Not testable - insufficient enforcement
-
-**Required Actions**:
-1. Add to bootstrap: "When working with multi-agent patterns, check DAL"
-2. Define trigger: "cross-domain pattern reuse" → check contamination
-3. Add red flag: Reusing patterns across domains without DAL = warning
-4. Add to Genesis-Docs index for discovery
-5. Create usage checklist with verification
 
 ---
 
 ### CAP-004: Diamond Lattice AST
-**Problem**: Don't understand repository relationships and boundaries  
+**Problem**: Don't understand repository relationships  
 **Location**: `github.com/bclark00/exponential-infrastructure-hub/modules/`  
 **Created**: 2026-02-15
 
 **Enforcement Layers**:
-- ❌ **Layer 1: Bootstrap** - Not in bootstrap
-- ❌ **Layer 2: Triggers** - No automatic invocation
-- ❌ **Layer 3: Red Flags** - No enforcement
-- ✅ **Layer 4: Discovery** - GitHub repo, documentation exists
-- ❌ **Layer 5: Verification** - No verification mechanism
+- ❌ **Layer 1: Bootstrap**
+- ❌ **Layer 2: Triggers**
+- ❌ **Layer 3: Red Flags**
+- ✅ **Layer 4: Discovery** - GitHub, docs
+- ❌ **Layer 5: Verification**
+
+**Dependencies**:
+- **Requires**: 
+  - CAP-001 (Exhaustive Search - for finding repos)
+  - CAP-009 (Bootstrap - for loading)
+- **Required By**: 
+  - CAP-002 (Repo Router - uses analysis)
+  - CAP-006 (Genesis Lattice - similar pattern)
+- **Side Effects**:
+  - Analysis changes affect router decisions
+  - Metrics changes affect repo recommendations
+  - Critical dependency for repo organization
 
 **Score**: 1/5 ⚠️  
 **Status**: INCOMPLETE ⚠️  
-**Keywords**: repository, structure, dependencies, boundaries, lattice  
-**Test**: Not testable - insufficient enforcement
-
-**Required Actions**:
-1. Add to bootstrap: "Before creating repos, check diamond lattice"
-2. Define trigger: "repository boundaries" → run lattice analysis
-3. Integrate with repository router for automated analysis
-4. Add periodic lattice updates (weekly?)
-5. Create verification: Lattice stays current
+**Risk Level**: MEDIUM (depended on by router)
 
 ---
 
 ### CAP-005: QuartzMemory Integration
-**Problem**: No middle-out semantic integration across Genesis  
-**Location**: Conversations + `illuminaughty-diamond` repo  
-**Created**: 2026-02-15 (documented from conversations)
+**Problem**: No middle-out semantic integration  
+**Location**: Conversations + `illuminaughty-diamond`  
+**Created**: 2026-02-15
 
 **Enforcement Layers**:
-- ❌ **Layer 1: Bootstrap** - Not in bootstrap
-- ❌ **Layer 2: Triggers** - No defined triggers
-- ❌ **Layer 3: Red Flags** - No enforcement
-- ✅ **Layer 4: Discovery** - Documented in QUARTZ_COMPLETE_ARCHITECTURE.md
-- ❌ **Layer 5: Verification** - No verification
+- ❌ **Layer 1: Bootstrap**
+- ❌ **Layer 2: Triggers**
+- ❌ **Layer 3: Red Flags**
+- ✅ **Layer 4: Discovery** - Documentation
+- ❌ **Layer 5: Verification**
+
+**Dependencies**:
+- **Requires**:
+  - CAP-003 (DAL - for contamination prevention)
+  - CAP-006 (Genesis Lattice - semantic integration)
+  - CAP-009 (Bootstrap - for awareness)
+- **Required By**: 
+  - CAP-006 (Genesis Lattice - provides semantic layer)
+- **Side Effects**:
+  - Signal emission changes affect learning
+  - Diamond promotion affects structural floor
+  - ActivationField changes affect all queries
 
 **Score**: 1/5 ⚠️  
 **Status**: INCOMPLETE ⚠️  
-**Keywords**: quartz, memory, mind, activation, semantic, middle-out  
-**Test**: Not testable - insufficient enforcement
-
-**Required Actions**:
-1. Add to bootstrap: Reference QuartzMemory architecture
-2. Define triggers: When to use QuartzMind vs QuartzMemory
-3. Create integration checklist
-4. Add to Genesis-Docs as RFC-QUARTZ series
-5. Implement verification of signal emission
+**Risk Level**: HIGH (complex dependencies)
 
 ---
 
@@ -161,127 +238,199 @@ Capability Name
 **Created**: 2026-02-15
 
 **Enforcement Layers**:
-- ❌ **Layer 1: Bootstrap** - Not in bootstrap
-- ❌ **Layer 2: Triggers** - No automatic triggers
-- ❌ **Layer 3: Red Flags** - No enforcement
-- ✅ **Layer 4: Discovery** - Complete documentation, multiple files
-- ❌ **Layer 5: Verification** - No verification
+- ❌ **Layer 1: Bootstrap**
+- ❌ **Layer 2: Triggers**
+- ❌ **Layer 3: Red Flags**
+- ✅ **Layer 4: Discovery** - Complete docs
+- ❌ **Layer 5: Verification**
+
+**Dependencies**:
+- **Requires**:
+  - CAP-005 (QuartzMemory - semantic engine)
+  - CAP-004 (Diamond Lattice AST - similar pattern)
+- **Required By**:
+  - CAP-005 (QuartzMemory - requires RFC structure)
+- **Side Effects**:
+  - RFC changes affect QuartzMemory integration
+  - Missing RFCs affect completeness
+  - Semantic relationships affect queries
 
 **Score**: 1/5 ⚠️  
 **Status**: INCOMPLETE ⚠️  
-**Keywords**: genesis, rfc, semantic, integration, quartz  
-**Test**: Not testable - insufficient enforcement
-
-**Required Actions**:
-1. Add to Genesis-Docs repository
-2. Define trigger: "RFC relationships" → check lattice
-3. Create missing RFC specifications (EXEC, AUDIT, MEMORY series)
-4. Integrate with QuartzMemory for semantic queries
-5. Add verification: Lattice stays synchronized with RFCs
+**Risk Level**: MEDIUM (bidirectional dependency with CAP-005)
 
 ---
 
-### CAP-007: Meta-Protocol (This Protocol)
+### CAP-007: Meta-Protocol
 **Problem**: Solutions created but forgotten  
 **Location**: `bootstrap-utils/META_PROTOCOL.md`  
 **Created**: 2026-02-15
 
 **Enforcement Layers**:
-- ✅ **Layer 1: Bootstrap** - In bootstrap-utils (committed)
-- ✅ **Layer 2: Triggers** - Cannot mark "DONE" without meta-protocol checklist
-- ✅ **Layer 3: Red Flags** - Solution with <3 layers = INCOMPLETE
-- ✅ **Layer 4: Discovery** - 2 locations (bootstrap, genesis-docs)
-- ✅ **Layer 5: Verification** - This capabilities register!
+- ✅ **Layer 1: Bootstrap**
+- ✅ **Layer 2: Triggers** - Cannot mark "DONE" without checklist
+- ✅ **Layer 3: Red Flags** - <3 layers = INCOMPLETE
+- ✅ **Layer 4: Discovery** - 2 locations
+- ✅ **Layer 5: Verification** - Capabilities register
+
+**Dependencies**:
+- **Requires**: 
+  - CAP-008 (Capabilities Register - for tracking)
+  - CAP-009 (Bootstrap - for enforcement)
+- **Required By**: ALL CAPABILITIES (enforces all)
+- **Side Effects**:
+  - Changes affect ALL capability creation
+  - Enforcement rules affect development workflow
+  - **CRITICAL**: Foundation for entire system
 
 **Score**: 5/5 ✅  
 **Status**: COMPLETE ✅  
-**Keywords**: solution, memory, enforcement, complete, protocol  
-**Test**: Next session - create solution and verify meta-protocol triggers
+**Risk Level**: CRITICAL (if broken, everything breaks)
 
 ---
 
-### CAP-008: Capabilities Register (This Document)
+### CAP-008: Capabilities Register
 **Problem**: No tracking of enforcement layers  
-**Location**: `TBD - needs permanent home`  
+**Location**: `bootstrap-utils/CAPABILITIES_REGISTER.md`  
 **Created**: 2026-02-15
 
 **Enforcement Layers**:
-- ❌ **Layer 1: Bootstrap** - Needs to be added to bootstrap
-- ✅ **Layer 2: Triggers** - Meta-protocol requires updating this
-- ✅ **Layer 3: Red Flags** - <3 layers = cannot mark COMPLETE
-- ✅ **Layer 4: Discovery** - Will be in bootstrap + genesis-docs
+- ✅ **Layer 1: Bootstrap** - Committed to bootstrap-utils
+- ✅ **Layer 2: Triggers** - Meta-protocol requires updates
+- ✅ **Layer 3: Red Flags** - <3 layers cannot mark COMPLETE
+- ✅ **Layer 4: Discovery** - Bootstrap + genesis-docs
 - ✅ **Layer 5: Verification** - Self-referential tracking
 
-**Score**: 4/5 ⚠️  
-**Status**: NEARLY COMPLETE (needs bootstrap integration)  
-**Keywords**: capabilities, register, tracking, enforcement  
-**Test**: Next session - verify register is consulted
+**Dependencies**:
+- **Requires**:
+  - CAP-007 (Meta-Protocol - defines what to track)
+  - CAP-009 (Bootstrap - for enforcement)
+- **Required By**:
+  - CAP-007 (Meta-Protocol - uses for verification)
+  - ALL CAPABILITIES (tracked here)
+- **Side Effects**:
+  - Schema changes affect all capability entries
+  - Minimum score changes affect COMPLETE status
+  - **CRITICAL**: Central tracking system
 
-**Required Actions**:
-1. Add to bootstrap: "Consult capabilities register before marking DONE"
-2. Commit to bootstrap-utils and genesis-docs
-3. Create update protocol (how often to review)
-
----
-
-## REGISTER STATISTICS
-
-**Total Capabilities**: 8  
-**Complete (5/5)**: 1 (12.5%) - Meta-Protocol  
-**Functional (4/5)**: 1 (12.5%) - Capabilities Register  
-**Operational (3/5)**: 1 (12.5%) - Exhaustive Search  
-**Incomplete (<3/5)**: 5 (62.5%) - Need work  
-
-**Average Enforcement**: 2.25/5 layers  
-**Target**: 3.0/5 minimum for all capabilities
+**Score**: 5/5 ✅  
+**Status**: COMPLETE ✅  
+**Risk Level**: CRITICAL (tracking foundation)
 
 ---
 
-## PRIORITY ACTIONS
+### CAP-009: Bootstrap Utils (NEW)
+**Problem**: No consistent session initialization  
+**Location**: `github.com/bclark00/bootstrap-utils`  
+**Created**: Pre-2026 (documented 2026-02-15)
 
-### Immediate (Today)
-1. ✅ Commit Meta-Protocol to bootstrap
-2. ✅ Commit Capabilities Register to bootstrap
-3. ⏳ Update incomplete capabilities to 3/5 minimum
+**Enforcement Layers**:
+- ✅ **Layer 1: Bootstrap** - IS the bootstrap (self-referential)
+- ✅ **Layer 2: Triggers** - Memory #1 forces loading
+- ✅ **Layer 3: Red Flags** - Missing bootstrap = broken session
+- ✅ **Layer 4: Discovery** - In memory, always referenced
+- ✅ **Layer 5: Verification** - Session starts verify load
 
-### High Priority (Next Session)
-1. Add Repository Router to bootstrap with triggers
-2. Integrate Diamond Lattice with router
-3. Define DAL usage triggers and add to bootstrap
-4. Create QuartzMemory integration checklist
+**Dependencies**:
+- **Requires**: None (foundation)
+- **Required By**: 
+  - CAP-001 (Exhaustive Search - loaded from here)
+  - CAP-007 (Meta-Protocol - loaded from here)
+  - CAP-008 (Capabilities Register - loaded from here)
+  - ALL OTHER CAPABILITIES (for discovery)
+- **Side Effects**:
+  - Changes affect ALL sessions
+  - File organization affects discoverability
+  - **ULTRA-CRITICAL**: Foundation of foundations
 
-### Medium Priority
-1. Periodic review of capabilities (weekly?)
-2. Add new capabilities as created
-3. Audit enforcement layers quarterly
-4. Update bootstrap as capabilities mature
-
----
-
-## USAGE PROTOCOL
-
-### When Creating New Capability
-1. Document in this register immediately
-2. Apply meta-protocol (ask "How will we remember?")
-3. Implement minimum 3/5 enforcement layers
-4. Mark status as INCOMPLETE until 3/5 achieved
-5. Cannot mark COMPLETE without 3/5 layers
-
-### When Using Existing Capability
-1. Check register for discovery keywords
-2. Verify enforcement layers active
-3. Follow trigger mechanisms
-4. Log usage for verification
-
-### When Updating Capability
-1. Update register entry
-2. Re-verify enforcement layers
-3. Update documentation
-4. Test verification mechanism
+**Score**: 5/5 ✅  
+**Status**: COMPLETE ✅  
+**Risk Level**: ULTRA-CRITICAL (if broken, nothing works)
 
 ---
 
-## REGISTER SCHEMA
+## DEPENDENCY ANALYSIS
+
+### Critical Path (Cannot Break)
+```
+CAP-009 (Bootstrap)
+    ↓
+CAP-007 (Meta-Protocol)
+    ↓
+CAP-008 (Capabilities Register)
+```
+
+**If any of these break → entire system fails**
+
+### High-Risk Dependencies
+```
+CAP-004 (Diamond Lattice)
+    ↓
+CAP-002 (Repo Router) - Router won't work without analysis
+```
+
+### Circular Dependencies (Need Careful Management)
+```
+CAP-005 (QuartzMemory) ←→ CAP-006 (Genesis Lattice)
+```
+
+**Both depend on each other - must evolve together**
+
+---
+
+## SIDE EFFECT MATRIX
+
+| Capability Modified | Side Effects On |
+|-------------------|-----------------|
+| CAP-001 (Search) | CAP-002 (Router can't find repos) |
+| CAP-002 (Router) | Code organization across all repos |
+| CAP-003 (DAL) | CAP-005 (QuartzMemory contamination) |
+| CAP-004 (Lattice) | CAP-002 (Router analysis broken) |
+| CAP-005 (Quartz) | CAP-006 (Genesis integration broken) |
+| CAP-006 (Genesis) | CAP-005 (QuartzMemory RFC structure) |
+| **CAP-007 (Meta)** | **ALL CAPABILITIES** |
+| **CAP-008 (Register)** | **ALL CAPABILITIES** |
+| **CAP-009 (Bootstrap)** | **EVERYTHING** |
+
+---
+
+## MODIFICATION PROTOCOL
+
+### Before Modifying ANY Capability:
+
+**1. Check Dependencies**
+```bash
+# Look up capability in register
+# Check "Required By" section
+# List all affected capabilities
+```
+
+**2. Impact Assessment**
+```
+For each dependent capability:
+  - What will break?
+  - How to test it still works?
+  - Need to update anything?
+```
+
+**3. Change Safely**
+```
+- Make modification
+- Test original capability
+- Test ALL dependent capabilities
+- Update register if dependencies changed
+```
+
+**4. Update Register**
+```
+- Update modified capability entry
+- Note changes in dependent capabilities
+- Update risk levels if needed
+```
+
+---
+
+## REGISTER SCHEMA v2.0
 
 ```json
 {
@@ -300,122 +449,105 @@ Capability Name
     "verification": boolean
   },
   
+  "dependencies": {
+    "requires": ["CAP-XXX", "CAP-YYY"],
+    "required_by": ["CAP-ZZZ"],
+    "side_effects": [
+      "Description of what breaks if this changes"
+    ]
+  },
+  
   "score": "X/5",
+  "risk_level": "ULTRA-CRITICAL|CRITICAL|HIGH|MEDIUM|LOW",
   "keywords": ["keyword1", "keyword2"],
-  "verification_test": "Test description",
-  "required_actions": ["action1", "action2"]
+  "verification_test": "Test description"
 }
 ```
 
 ---
 
-## INTEGRATION POINTS
+## STATISTICS (Updated)
 
-### With Bootstrap
-- Register location in bootstrap README
-- Consult before marking solutions DONE
-- Update as new capabilities added
+**Total Capabilities**: 9  
+**Complete (5/5)**: 3 (33%) - Meta, Register, Bootstrap  
+**Incomplete (<3/5)**: 6 (67%)  
+**Average Score**: 2.67/5  
 
-### With Meta-Protocol
-- Meta-protocol requires register update
-- Register tracks meta-protocol compliance
-- Bidirectional enforcement
+**Dependency Statistics**:
+- **Ultra-Critical**: 1 (Bootstrap)
+- **Critical**: 2 (Meta-Protocol, Register)
+- **High Risk**: 2 (Router, QuartzMemory)
+- **Medium Risk**: 2 (Lattice, Genesis)
+- **Low Risk**: 0
 
-### With Memory System
-- When memory space available, add high-value capabilities
-- Register provides prioritization (5/5 capabilities first)
-- Cross-reference with memory entries
+**Most Depended On**:
+1. CAP-009 (Bootstrap) - 8 dependencies
+2. CAP-007 (Meta-Protocol) - ALL capabilities
+3. CAP-001 (Exhaustive Search) - 2 dependencies
 
----
-
-## VERIFICATION TESTS
-
-### Next Session Checklist
-1. [ ] Load bootstrap-utils
-2. [ ] See META_PROTOCOL.md
-3. [ ] See CAPABILITIES_REGISTER.md
-4. [ ] Create a new solution
-5. [ ] Verify meta-protocol triggers
-6. [ ] Update capabilities register
-7. [ ] Confirm 3/5 minimum enforced
-
-### Quarterly Audit
-1. [ ] Review all capabilities
-2. [ ] Verify enforcement layers still active
-3. [ ] Update status if changed
-4. [ ] Archive obsolete capabilities
-5. [ ] Promote incomplete to complete where applicable
+**Most Dependent**:
+1. CAP-002 (Repo Router) - 3 requirements
+2. CAP-005 (QuartzMemory) - 3 requirements
+3. CAP-006 (Genesis) - 2 requirements
 
 ---
 
-## CONTINUOUS IMPROVEMENT
+## PRIORITY ACTIONS (Re-Prioritized by Dependencies)
 
-### Capability Lifecycle
-```
-PROPOSED → Add to register with 0/5
-         ↓
-DEVELOPMENT → Implement enforcement layers
-         ↓
-INCOMPLETE → <3 layers (cannot use reliably)
-         ↓
-OPERATIONAL → 3-4 layers (usable but not optimal)
-         ↓
-COMPLETE → 5 layers (fully enforced)
-         ↓
-MAINTAINED → Quarterly audits
-         ↓
-ARCHIVED → Replaced/obsolete
-```
+### ULTRA-HIGH PRIORITY (Critical Path)
+1. ✅ Bootstrap (CAP-009) - Already complete
+2. ✅ Meta-Protocol (CAP-007) - Already complete
+3. ✅ Register (CAP-008) - Already complete
 
-### Register Evolution
-- Add capabilities as discovered/created
-- Update enforcement as layers added
-- Track version history
-- Maintain audit trail
+### HIGH PRIORITY (Many Dependencies)
+1. ⚠️ Exhaustive Search (CAP-001) - Complete but needs monitoring
+2. ⚠️ Diamond Lattice (CAP-004) - Incomplete, blocks router
+3. ⚠️ Repository Router (CAP-002) - Incomplete, many requirements
+
+### MEDIUM PRIORITY (Circular Dependencies)
+1. ⚠️ QuartzMemory (CAP-005) - Needs Genesis
+2. ⚠️ Genesis Lattice (CAP-006) - Needs QuartzMemory
+   **Must develop together**
+
+### LOWER PRIORITY (Fewer Dependencies)
+1. ⚠️ Domain DAL (CAP-003) - Independent, needed by Quartz
 
 ---
 
-## SUCCESS METRICS
+## CREDENTIALS VAULT (NEW)
 
-**Register Health**:
-- ✅ >80% capabilities at 3/5+ layers
-- ✅ All active capabilities documented
-- ✅ Register consulted before marking DONE
-- ✅ No forgotten solutions
+**Location**: `/home/claude/.credentials_vault.json`  
+**Permissions**: 600 (read-write owner only)
 
-**Capability Quality**:
-- ✅ Average enforcement >3.0/5
-- ✅ New capabilities start with 3/5 minimum
-- ✅ Incomplete capabilities have action plans
-- ✅ Complete capabilities stay complete
+**Contents**:
+- GitHub tokens (bclark00, Primevelocity)
+- Anthropic API keys
+- Claude OAuth tokens (NEW - from upload)
+- Google Gemini key
+- HiveMind key
 
-**System Integration**:
-- ✅ Register in bootstrap
-- ✅ Meta-protocol enforced
-- ✅ Quarterly audits completed
-- ✅ Zero lost solutions
+**Integration**: Bootstrap references credential vault
 
 ---
 
 ## BOTTOM LINE
 
-**This register makes enforcement VERIFIABLE.**
+**Version 2.0 Enhancements**:
+1. ✅ Dependency graph tracking
+2. ✅ Side effect warnings
+3. ✅ Risk level assessment
+4. ✅ Modification protocol
+5. ✅ Circular dependency detection
+6. ✅ Credentials vault integration
 
-Instead of "did we remember?" → "what's the score?"
+**Before Modifying Anything**:
+- Check register
+- Review dependencies
+- Assess impact
+- Test dependents
+- Update register
 
-Instead of "is it documented?" → "how many layers?"
-
-Instead of "trust the system" → "audit the register"
-
-**Quantifiable. Trackable. Enforceable.**
-
----
-
-**Status**: 4/5 layers (needs bootstrap integration)  
-**Location**: To be committed to bootstrap-utils  
-**Next**: Add Layer 1 (bootstrap integration)  
-
-**This makes the meta-protocol MEASURABLE.**
+**This prevents breaking changes and tracks ripple effects.**
 
 ---
 
