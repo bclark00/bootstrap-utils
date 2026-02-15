@@ -1,3 +1,11 @@
+# bootstrap-utils
+
+**Developer**: Brandon Clark (@bclark00)  
+**Implementation**: Claude (Anthropic AI Assistant)  
+**Copyright**: © 2025-2026 Brandon Clark. All Rights Reserved.
+
+---
+
 # Git & GitHub Tools
 
 ## api-git-clone.sh
