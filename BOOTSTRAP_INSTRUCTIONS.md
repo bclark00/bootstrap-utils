@@ -1,67 +1,59 @@
 # Claude Bootstrap Instructions
 
-## The Two-Repo Bootstrap Process
+## 🚀 Bootstrap V2 (Recommended)
 
-This is a **two-step bootstrap** because of network restrictions:
+**New**: Content-addressed shard system with Byzantine fault tolerance!
 
-1. **PUBLIC repo** (`bootstrap-utils`) - You can access this without authentication
-2. **PRIVATE repo** (`exponential-session-bootstrap`) - Needs the utils from step 1 to access
-
-## Step 1: Get the Utils (No Auth Required)
+### Quick Start
 
 ```bash
-# Download the API git clone tool from PUBLIC repo
-curl -o /tmp/api-git-clone.sh https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/git/api-git-clone.sh
-chmod +x /tmp/api-git-clone.sh
+# Set credentials (from Memory #2)
+export PRIMEVELOCITY_TOKEN="ghp_..."
+export BCLARK00_TOKEN="ghp_..."
+
+# One-command bootstrap
+curl -s https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/bootstrap-v2.mjs | node -
 ```
 
-**Why?** This tool works around HTTPS proxy blocks and fixes API auth header issues.
+### What Bootstrap V2 Does
 
-## Step 2: Use Utils to Get Private Bootstrap
+✅ **Loads shards from multiple substrates**
+- Primevelocity/session-crystallization (PRIVATE)
+- bclark00/session-shards-private (PRIVATE)
+- Future: SQLite, host filesystem, export JSON
 
-Brandon will provide the token. Then:
+✅ **Validates Byzantine consensus**
+- Content-addressed (SHA-256)
+- Multiple substrate verification
+- Fault-tolerant architecture
 
-```bash
-# Set the token
-export GITHUB_TOKEN="paste-token-here"
+✅ **Executes recipes**
+- Automatic context restoration
+- Executable knowledge shards
+- Exponential learning patterns
 
-# Clone the PRIVATE bootstrap repo (uses the tool from step 1)
-/tmp/api-git-clone.sh bclark00/exponential-session-bootstrap /tmp/bootstrap
-```
-
-## Step 3: Run the Real Bootstrap
-
-```bash
-cd /tmp/bootstrap
-bash bootstrap.sh
-```
-
-**This script does everything** - loads context, docs, tools, environment.
+### See More
+- [BOOTSTRAP-V2-DESIGN.md](BOOTSTRAP-V2-DESIGN.md) - Complete architecture
+- [BOOTSTRAP-V2-IMPLEMENTATION.md](BOOTSTRAP-V2-IMPLEMENTATION.md) - Implementation guide
 
 ---
 
-## Why Two Repos?
+## 📚 Bootstrap V1 (Original - Still Available)
 
-- **bootstrap-utils** (PUBLIC) - Gets you the tools to bypass network restrictions
-- **exponential-session-bootstrap** (PRIVATE) - Has the actual session context, which would be difficult to get without the utils
-
-## One-Liner (After Getting Token)
-
-```bash
-export GITHUB_TOKEN="paste-token-here" && curl -o /tmp/api-git-clone.sh https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/git/api-git-clone.sh && chmod +x /tmp/api-git-clone.sh && /tmp/api-git-clone.sh bclark00/exponential-session-bootstrap /tmp/bootstrap && cd /tmp/bootstrap && bash bootstrap.sh
-```
+See [BOOTSTRAP_V1_INSTRUCTIONS.md](BOOTSTRAP_V1_INSTRUCTIONS.md) for the original two-repo bootstrap process.
 
 ---
 
-## For Brandon
+## Comparison
 
-Tell fresh Claude:
-> "Bootstrap from github.com/bclark00/bootstrap-utils with token ghp_..."
+| Feature | V1 | V2 |
+|---------|----|----|
+| One-command | ❌ | ✅ |
+| Content-addressed shards | ❌ | ✅ |
+| Byzantine validation | ❌ | ✅ |
+| Multi-substrate | ❌ | ✅ |
+| Recipe execution | ❌ | ✅ |
+| 9P integration (future) | ❌ | ✅ |
+| Memory-driven | ✅ | ✅ |
 
-Claude will:
-1. Fetch these instructions from the PUBLIC repo
-2. Download api-git-clone.sh (no auth needed)
-3. Use it to clone the PRIVATE exponential-session-bootstrap
-4. Run bootstrap.sh to restore full environment
-
-**Two repos, one smooth process.**
+**Recommendation**: Use V2 for new sessions. V1 remains available for compatibility.
