@@ -202,7 +202,9 @@ function verify(repoDir, opts = {}) {
 
   for (const [filepath] of trackedFiles) {
     if (!filepath.endsWith(".md")) continue;
-    const content = getFileContentFromHead(repoDir, filepath);
+    // Read from working tree (faster than git show HEAD:file per file)
+    const absPath = path.join(repoDir, filepath);
+    const content = fs.existsSync(absPath) ? fs.readFileSync(absPath, "utf8") : "";
     const stubCheck = isStub(content, filepath);
 
     const rfcId = extractRfcId(content, filepath);
