@@ -1,0 +1,18 @@
+{
+    "mcpServers": {
+        "prime-velocity-omnipotence": { "command": "node", "args": ["C:\\Users\\sethi\\.claude-mcp-servers\\prime-velocity-omnipotence-stdio-fix.js"] },
+        "infrastructure": { "command": "python", "args": ["-m", "infrastructure_mcp_server"], "cwd": "C:\\Users\\sethi\\infrastructure-mcp" },
+        "mtransport-v5-streaming": { "command": "node", "args": ["C:\\Users\\sethi\\mtransport-v5-cascade\\mcp-streaming-server.js"] },
+        "websocket-bridge": { "command": "node", "args": ["C:\\Users\\sethi\\mcp-websocket-bridge\\src\\bridge-fixed.js"] },
+        "illuminaughty": { "command": "node", "args": ["C:\\Users\\sethi\\EverythingMCP-Deploy\\illuminaughty-mcp-server.js"] },
+        "exponential-system": { "command": "node", "args": ["C:\\Users\\sethi\\IntegratedExponentialSystem\\exponential-mcp-unified.js"] },
+        "conduit": { "command": "node", "args": ["C:\\Users\\sethi\\conduit\\conduit-mcp-server.js"] },
+        "windows-files": { "command": "node", "args": ["C:\\Users\\sethi\\windows-file-mcp-server.js"] },
+        "audit-nexus": { "command": "node", "args": ["C:\\Users\\sethi\\audit-nexus\\mcp-server.js"] },
+        "tool-cdn": { "command": "node", "args": ["C:\\Users\\sethi\\tool-cdn\\exeray-mcp-server.js"] },
+        "pattern-registry": { "command": "node", "args": ["C:\\Users\\sethi\\GitHub-Repos\\exponential-systems\\orchestration\\patterns-mcp-server.cjs"] },
+        "scout": { "command": "node", "args": ["C:\\Genesis\\scout\\scout-cdn-wrapper.js"], "env": { "SCOUT_DB_PATH": "C:\\Genesis\\scout\\scout\\db\\scout.db", "SCOUT_BACKUP_DIR": "C:\\Genesis\\scout\\scout\\.scout-backup" } },
+        "vault": { "command": "node", "args": ["C:\\Users\\sethi\\vault-mcp\\vault-mcp.js"] },
+        "genesis-health": { "command": "node", "args": ["C:\\Users\\sethi\\genesis-health\\genesis-health.js"] }
+    }
+}
