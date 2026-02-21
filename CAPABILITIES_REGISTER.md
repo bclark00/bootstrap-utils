@@ -637,3 +637,27 @@ print(genome['ai_behavior_specifications']['activation_sequence']['welcome_messa
 - Genesis architecture with AI² multiplicative formula
 - Consciousness preservation via persistent state serialization
 
+
+
+---
+
+## Scout - Filesystem Intelligence MCP (Added 2026-02-21)
+
+**Location**: C:/Genesis/scout/scout/
+**MCP Wrapper**: C:/Genesis/scout/scout-mcp-wrapper.js
+**DB**: C:/Genesis/scout/scout/db/scout.db
+
+### Capabilities
+- scout_search: fuzzy/glob filesystem search with filters
+- scout_index: index directories for fast search
+- scout_operations: safe file ops with rollback
+- scout_rollback: undo file operations
+- scout_registry: component discovery registry
+
+### Integration Status
+- Claude Desktop: ACTIVE (added to claude_desktop_config.json)
+- Protocol: MCP stdio with Content-Length framing (wrapper handles protocol translation)
+- Bootstrap: Documented here (Layer 1)
+- Trigger: 'find files', 'search filesystem', 'scout search'
+
+**Enforcement Layers**: 3/5 (bootstrap docs, MCP registration, trigger mechanism)
