@@ -76,34 +76,76 @@ class GitHubClient {
   }
 
   async request(path, method = 'GET') {
+    // Proxy-aware: route through HTTPS_PROXY env var via CONNECT tunnel
+    const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy;
+    const targetHost = 'api.github.com';
+    const targetPath = `/repos/${this.owner}/${this.repo}/contents/${path}`;
+    const headers = {
+      'Authorization': `Bearer ${this.token}`,
+      'User-Agent': 'Bootstrap-V2',
+      'Accept': 'application/vnd.github.v3+json'
+    };
+
+    if (proxyUrl) {
+      return new Promise((resolve, reject) => {
+        const { URL: _URL } = require('url');
+        const net = require('net');
+        const tls = require('tls');
+        const proxy = new _URL(proxyUrl);
+        const sock = net.createConnection(parseInt(proxy.port), proxy.hostname, () => {
+          const auth = proxy.username
+            ? `Proxy-Authorization: Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')}\r\n`
+            : '';
+          sock.write(`CONNECT ${targetHost}:443 HTTP/1.1\r\nHost: ${targetHost}:443\r\n${auth}\r\n`);
+          sock.once('data', d => {
+            if (!d.toString().includes('200')) return reject(new Error('CONNECT failed'));
+            const t = tls.connect({ socket: sock, servername: targetHost }, () => {
+              t.write(`${method} ${targetPath} HTTP/1.1\r\nHost: ${targetHost}\r\nConnection: close\r\n${Object.entries(headers).map(([k,v])=>`${k}: ${v}`).join('\r\n')}\r\n\r\n`);
+              let chunks = [];
+              t.on('data', c => chunks.push(c));
+              t.on('end', () => {
+                const str = Buffer.concat(chunks).toString('utf8');
+                const sep = str.indexOf('\r\n\r\n');
+                const hdr = str.slice(0, sep);
+                const status = parseInt(hdr.split('\r\n')[0].split(' ')[1]);
+                const isChunked = hdr.toLowerCase().includes('transfer-encoding: chunked');
+                let body = str.slice(sep + 4);
+                if (isChunked) {
+                  let r = '', i = 0;
+                  while (i < body.length) { const cr = body.indexOf('\r\n', i); if (cr===-1) break; const sz = parseInt(body.slice(i,cr).split(';')[0].trim(),16); if(isNaN(sz)||sz===0) break; r+=body.slice(cr+2,cr+2+sz); i=cr+2+sz+2; }
+                  body = r;
+                }
+                try {
+                  if (status >= 200 && status < 300) resolve(JSON.parse(body || '{}'));
+                  else reject(new Error(`GitHub API error: ${status}`));
+                } catch(e) { reject(new Error(`Parse error: ${e.message}`)); }
+              });
+              t.on('error', reject);
+            });
+            t.on('error', reject);
+          });
+        });
+        sock.on('error', reject);
+      });
+    }
+
     return new Promise((resolve, reject) => {
       const options = {
-        hostname: 'api.github.com',
-        path: `/repos/${this.owner}/${this.repo}/contents/${path}`,
+        hostname: targetHost,
+        path: targetPath,
         method: method,
-        headers: {
-          'Authorization': `Bearer ${this.token}`,
-          'User-Agent': 'Bootstrap-V2',
-          'Accept': 'application/vnd.github.v3+json'
-        }
+        headers: headers
       };
-
       const req = https.request(options, (res) => {
         let data = '';
         res.on('data', (chunk) => data += chunk);
         res.on('end', () => {
           try {
-            if (res.statusCode >= 200 && res.statusCode < 300) {
-              resolve(JSON.parse(data || '{}'));
-            } else {
-              reject(new Error(`GitHub API error: ${res.statusCode}`));
-            }
-          } catch (e) {
-            reject(new Error(`Parse error: ${e.message}`));
-          }
+            if (res.statusCode >= 200 && res.statusCode < 300) resolve(JSON.parse(data || '{}'));
+            else reject(new Error(`GitHub API error: ${res.statusCode}`));
+          } catch (e) { reject(new Error(`Parse error: ${e.message}`)); }
         });
       });
-
       req.on('error', reject);
       req.end();
     });
