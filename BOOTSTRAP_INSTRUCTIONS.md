@@ -1,92 +1,87 @@
-# Claude Bootstrap Instructions
+# Bootstrap Instructions
 
-## 🚀 Bootstrap V2 (Recommended)
+## Architecture
 
-**New**: Content-addressed shard system with Byzantine fault tolerance!
+Bootstrap is two stages. This document covers both. Stage 1 is public and
+minimal. Stage 2 is private and operational. Do not conflate them.
 
-### Quick Start
+---
+
+## Stage 1 (Public — this repo)
+
+**Goal**: Solve transport problems and reach Stage 2. Nothing more.
+
+### Prerequisites
+
+Before running anything, check Memory for credentials:
+- **bclark00 token**: Memory item 2
+- **Primevelocity token**: Memory item 2
+- If Memory is not yet loaded, ask the user before proceeding.
+
+### Transport notes
+
+Git clone over HTTPS is blocked in some Claude container environments.
+Use the API-based clone tool in this repo for all clones:
 
 ```bash
-# Set credentials (from Memory #2)
-export PRIMEVELOCITY_TOKEN="ghp_..."
-export BCLARK00_TOKEN="ghp_..."
-
-# One-command bootstrap
-curl -s https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/bootstrap-v2.mjs | node -
+# Standard form — use for every private repo clone
+curl -sL "https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/git/api-git-clone.sh" | \
+  bash -s owner/repo /target/path
 ```
 
-### What Bootstrap V2 Does
+This uses the GitHub Contents API via curl and works through any proxy
+that allows HTTPS. It produces a real git repository with remotes configured.
 
-✅ **Loads shards from multiple substrates**
-- Primevelocity/session-crystallization (PRIVATE)
-- bclark00/session-shards-private (PRIVATE)
-- Future: SQLite, host filesystem, export JSON
-
-✅ **Validates Byzantine consensus**
-- Content-addressed (SHA-256)
-- Multiple substrate verification
-- Fault-tolerant architecture
-
-✅ **Executes recipes**
-- Automatic context restoration
-- Executable knowledge shards
-- Exponential learning patterns
-
-### See More
-- [BOOTSTRAP-V2-DESIGN.md](BOOTSTRAP-V2-DESIGN.md) - Complete architecture
-- [BOOTSTRAP-V2-IMPLEMENTATION.md](BOOTSTRAP-V2-IMPLEMENTATION.md) - Implementation guide
-
----
-
-## 📚 Bootstrap V1 (Original - Still Available)
-
-See [BOOTSTRAP_V1_INSTRUCTIONS.md](BOOTSTRAP_V1_INSTRUCTIONS.md) for the original two-repo bootstrap process.
-
----
-
-## Comparison
-
-| Feature | V1 | V2 |
-|---------|----|----|
-| One-command | ❌ | ✅ |
-| Content-addressed shards | ❌ | ✅ |
-| Byzantine validation | ❌ | ✅ |
-| Multi-substrate | ❌ | ✅ |
-| Recipe execution | ❌ | ✅ |
-| 9P integration (future) | ❌ | ✅ |
-| Memory-driven | ✅ | ✅ |
-
-**Recommendation**: Use V2 for new sessions. V1 remains available for compatibility.
-
----
-
-## Stage 2 Bootstrap (Constitutional · Full Context)
-
-After Stage 1 orientation, load constitutional grounding and full session state:
+### Run Stage 1
 
 ```bash
-# Clone Stage 2 (private)
-export GITHUB_TOKEN="ghp_..."   # bclark00 token
+# Only needed if Stage 2 location is unknown or transport is broken
+node bootstrap-v2.mjs
+```
+
+Stage 1 validates that transport works and that you can reach private repos.
+If it fails, fix the transport before proceeding.
+
+---
+
+## Stage 2 (Private — bclark00/exponential-session-bootstrap)
+
+**Goal**: Restore full operational context. Guardian Invariants first. Always.
+
+```bash
+export GITHUB_TOKEN="ghp_..."   # bclark00 token from Memory
+export PV_TOKEN="ghp_..."       # Primevelocity token from Memory
+
 curl -sL "https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/git/api-git-clone.sh" | \
   bash -s bclark00/exponential-session-bootstrap /tmp/stage2
 
-# Run Stage 2
-export PV_TOKEN="ghp_..."       # Primevelocity token (for shards)
 node /tmp/stage2/bootstrap-stage2.mjs
 ```
 
-### What Stage 2 Loads (in order)
+### Load order
 
-1. **Guardian Invariants** — Genesis Constitution (law, not philosophy). Loaded first. Fatal if unavailable.
-2. **RFC Index** — Specification landscape (36 canonical RFCs). Fatal if unavailable.
-3. **Session Shards** — Byzantine-verified working state from Primevelocity/session-crystallization.
+Stage 2 loads in this order. Each step is fatal if unavailable — do not
+proceed degraded:
+
+1. **Guardian Invariants** — Genesis Constitution. Law, not philosophy.
+2. **RFC Index** — Canonical specification landscape.
+3. **Session Shards** — Byzantine-verified state from Primevelocity/session-crystallization.
 4. **Context Map** — Project inventory, infrastructure layout, active intents.
-5. **Reflection Pass** — Surfaces drift and improvement opportunities from last session.
+5. **Reflection Pass** — Surfaces drift and improvements from last session.
 6. **Bootstrap Receipt** — INV-2 provenance record of this session start.
 
-### Design Principles
+### Design rules
 
 - Transport failures are loud and fatal. Never silent. Never degraded-mode fallback.
-- If GitHub is unreachable, the problem is the transport — fix it, don't design around it.
-- Every session start is a traceable artifact (receipt hash emitted).
+- If GitHub is unreachable, fix the transport. Do not design around it.
+- Every session start emits a traceable receipt hash.
 - Each iteration surfaces improvements to the process itself.
+
+---
+
+## After Bootstrap
+
+Once Stage 2 completes, consult CAPABILITIES_REGISTER.md for available
+tools, active repos, and current infrastructure state.
+
+All new repos default to **private** unless explicitly designated otherwise.
