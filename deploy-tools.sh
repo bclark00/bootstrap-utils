@@ -1,6 +1,6 @@
 #!/bin/bash
-# deploy-tools.sh — Pull tool-cdn tools, verify SHA256, install locally
-# Reflects deployed MCP tools into claude_desktop_config.json automatically.
+# deploy-tools.sh — Pull tool-cdn tools, verify SHA256, install locally.
+# Reflects deployed tools into claude_desktop_config.json via genesis-mcp facade.
 
 set -euo pipefail
 
@@ -9,8 +9,9 @@ CDN="https://api.github.com/repos/Primevelocity/tool-cdn/contents"
 DEST="${TOOL_CDN_DIR:-/home/zorin/tool-cdn}"
 
 declare -A TOOLS=(
+    ["genesis-mcp.js"]="960b57b8e53cf92cb2d87fa86155e30f802b6210007646bd794e6cf3b193d17a"
     ["filesystem-mcp.js"]="e47cd59df16c42b5db215b6c57ab1c879b44feaa042baf9f84a2871a9e6e634a"
-    ["claude-api.mjs"]="88476c8eb6f1f76dce3b18fc1c9417496251c7134caa1cb94be5862c6263c5c3"
+    ["claude-api.mjs"]="dc29b2338b5d8719566f5fef1c3e2ddd42c7215a6049fcd0b6c519d8abc51890"
 )
 
 mkdir -p "$DEST"
@@ -31,14 +32,10 @@ content = base64.b64decode(d['content'].replace('\n',''))
 open('/tmp/_tool_cdn_tmp', 'wb').write(content)
 "
     actual=$(sha256sum /tmp/_tool_cdn_tmp | cut -d' ' -f1)
-
     if [ "$actual" != "$expected" ]; then
-        echo "HASH MISMATCH: $file"
-        echo "  expected: $expected"
-        echo "  actual:   $actual"
+        echo "HASH MISMATCH: $file  expected=$expected  actual=$actual"
         exit 1
     fi
-
     mv /tmp/_tool_cdn_tmp "$outpath"
     chmod 755 "$outpath"
     echo "  OK: $outpath"
@@ -47,7 +44,7 @@ done
 echo ""
 echo "All tools verified and installed to $DEST"
 
-# Reflect deployed MCP servers into claude_desktop_config.json
+# Reflect into claude_desktop_config.json — single genesis-mcp entry covers everything
 CONFIG_DIR="$HOME/.config/Claude"
 CONFIG="$CONFIG_DIR/claude_desktop_config.json"
 mkdir -p "$CONFIG_DIR"
@@ -55,11 +52,10 @@ mkdir -p "$CONFIG_DIR"
 python3 << PYEOF
 import json, os
 
-config_path = os.path.expanduser("$CONFIG")
-dest = "$DEST"
-home = os.path.expanduser("~")
+config_path = "$CONFIG"
+dest        = "$DEST"
+home        = os.path.expanduser("~")
 
-# Load existing or start fresh
 try:
     with open(config_path) as f:
         config = json.load(f)
@@ -68,43 +64,32 @@ except (FileNotFoundError, json.JSONDecodeError):
 
 config.setdefault("mcpServers", {})
 
-# Map: filename -> MCP server spec (None = CLI tool, not a server)
-MCP_SERVERS = {
-    "filesystem-mcp.js": {
-        "name": "filesystem",
-        "spec": {
-            "command": "node",
-            "args": [
-                f"{dest}/filesystem-mcp.js",
-                home,
-                f"{home}/repos"
-            ]
-        }
-    },
-    "claude-api.mjs": None,
+# genesis-mcp is the single facade — it dynamically exposes everything else
+spec = {
+    "command": "node",
+    "args": [
+        f"{dest}/genesis-mcp.js",
+        home,
+        f"{home}/repos"
+    ],
+    "env": {
+        "TOOL_CDN_DIR": dest
+    }
 }
 
-changed = False
-for filename, entry in MCP_SERVERS.items():
-    full_path = os.path.join(dest, filename)
-    if not os.path.exists(full_path) or entry is None:
-        continue
-    name = entry["name"]
-    spec = entry["spec"]
-    if config["mcpServers"].get(name) != spec:
-        config["mcpServers"][name] = spec
-        print(f"  MCP server registered: {name}")
-        changed = True
-    else:
-        print(f"  MCP server already current: {name}")
-
+changed = config["mcpServers"].get("genesis") != spec
 if changed:
+    config["mcpServers"]["genesis"] = spec
+    # Remove legacy standalone filesystem entry if present
+    config["mcpServers"].pop("filesystem", None)
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
-    print(f"  Config written: {config_path}")
+    print(f"  Config updated: {config_path}")
+    print(f"  MCP server: genesis -> {dest}/genesis-mcp.js")
 else:
-    print(f"  Config unchanged: {config_path}")
+    print(f"  Config already current: {config_path}")
 PYEOF
 
 echo ""
-echo "Restart Claude Desktop to load new MCP servers."
+echo "Restart Claude Desktop to load genesis-mcp."
+echo "Tools exposed: fs:*, compose, claude-api:* (and any future tool-cdn additions)"
