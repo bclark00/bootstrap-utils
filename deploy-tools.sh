@@ -65,8 +65,14 @@ except (FileNotFoundError, json.JSONDecodeError):
 config.setdefault("mcpServers", {})
 
 # genesis-mcp is the single facade — it dynamically exposes everything else
+# Find node binary (nvm-aware)
+import shutil, subprocess
+node_bin = shutil.which("node") or subprocess.run(
+    ["bash", "-lc", "which node"], capture_output=True, text=True
+).stdout.strip() or "node"
+
 spec = {
-    "command": "node",
+    "command": node_bin,
     "args": [
         f"{dest}/genesis-mcp.js",
         home,
