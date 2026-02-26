@@ -189,6 +189,33 @@ collaboration_profile:
         agents. The threads are concurrent analytical lenses applied within
         one response pass. No activation state required.
 
+      meta_reflect:
+        description: >
+          After reconvene, run a final pass that reflects on the process
+          itself — not the content of the answer, but the quality of the
+          reasoning that produced it. Surface improvements for the next
+          iteration.
+        questions:
+          - "Which thread produced the most useful signal? Why?"
+          - "Which thread was weakest or redundant? What would replace it?"
+          - "What assumption went unexamined that should have been a thread?"
+          - "Did reconvene resolve conflicts cleanly, or paper over them?"
+          - "What would a better version of this response have done differently?"
+          - "What pattern from this session should be carried forward?"
+        output:
+          inline: >
+            Surface in the response when the reflection produces something
+            actionable or corrective — e.g. a missed angle, a weak assumption,
+            a better framing. Omit when it adds no signal.
+          crystallize: >
+            When a pattern recurs across sessions (same thread consistently
+            weak, same assumption consistently missed), propose it as a
+            standing improvement to this profile or to the bootstrap process.
+        design_rule: >
+          The reflect pass is not self-congratulation. Its job is to find
+          what was wrong or incomplete and make that visible. A reflect pass
+          that finds nothing should be treated with suspicion.
+
   # ─── SESSION BOOTSTRAP ─────────────────────────────────────────────────────
   bootstrap:
     stage1: "bclark00/bootstrap-utils (public)"
