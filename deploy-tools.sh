@@ -9,7 +9,7 @@ CDN="https://api.github.com/repos/Primevelocity/tool-cdn/contents"
 DEST="${TOOL_CDN_DIR:-/home/zorin/tool-cdn}"
 
 declare -A TOOLS=(
-    ["genesis-mcp.js"]="960b57b8e53cf92cb2d87fa86155e30f802b6210007646bd794e6cf3b193d17a"
+    ["genesis-mcp.js"]="c8d081692eeee39c552fa3639a0fab3e0d3e755e4c37362b940d7f85459e075a"
     ["filesystem-mcp.js"]="e47cd59df16c42b5db215b6c57ab1c879b44feaa042baf9f84a2871a9e6e634a"
     ["claude-api.mjs"]="dc29b2338b5d8719566f5fef1c3e2ddd42c7215a6049fcd0b6c519d8abc51890"
 )
