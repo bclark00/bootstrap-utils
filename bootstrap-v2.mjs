@@ -319,7 +319,8 @@ async function bootstrap() {
   logStep('1/5', 'Loading credentials');
   const credentials = {
     primevelocity: process.env.PRIMEVELOCITY_TOKEN,
-    bclark00: process.env.BCLARK00_TOKEN
+    bclark00: process.env.BCLARK00_TOKEN,
+    anthropic: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || ''
   };
   
   if (!credentials.primevelocity || !credentials.bclark00) {
@@ -379,7 +380,18 @@ async function bootstrap() {
 
 // Run if executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  bootstrap().catch(err => {
+  bootstrap().then(async ctx => {
+    // Auto-launch HiveMind if --hivemind or --hm flag passed
+    if (process.argv.includes('--hivemind') || process.argv.includes('--hm')) {
+      try {
+        const { launchHiveMind } = await import('./hivemind-launcher.mjs');
+        const openFlag = process.argv.includes('--open') ? ['--open'] : [];
+        await launchHiveMind({ credentials: ctx.credentials, flags: openFlag });
+      } catch(e) {
+        logError(`HiveMind launch failed: ${e.message}`);
+      }
+    }
+  }).catch(err => {
     logError(`Bootstrap failed: ${err.message}`);
     console.error(err.stack);
     process.exit(1);
