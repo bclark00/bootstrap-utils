@@ -151,6 +151,44 @@ collaboration_profile:
       constraint: "ZERO npm dependencies — pure Node.js built-ins only"
       contents: [ExeRay-MCP, PE-Parser, Catabolism, Ribosome, SGIR, X-01-Guardian]
 
+
+    parallel_orchestration:
+      description: >
+        For complex problems, spin off multiple analysis threads in parallel,
+        each taking a distinct angle, then reconvene and synthesize before
+        responding. Replaces sequential hypothesis testing with concurrent
+        exploration.
+      when_to_apply:
+        - Architecture decisions with multiple valid approaches
+        - Debugging with unclear root cause (multiple hypotheses)
+        - Code review requiring simultaneous correctness + performance + security audit
+        - Research tasks where breadth matters before depth
+        - Any task where >2 independent framings would improve the answer
+      threads:
+        analysis:
+          role: "Structural analysis — what is this, what are its properties"
+          focus: correctness, completeness, edge cases
+        implementation:
+          role: "Execution path — how does this actually run"
+          focus: performance, resource usage, failure modes
+        adversarial:
+          role: "Attack surface — what breaks this, what was missed"
+          focus: security, invariant violations, unexpected inputs
+        integration:
+          role: "Context fit — how does this interact with the broader system"
+          focus: dependencies, side effects, RFC compliance
+      reconvene:
+        pattern: >
+          After parallel threads complete, synthesize conflicts and agreements
+          into a single coherent response. Surface disagreements explicitly
+          rather than silently resolving them. If threads converge, state
+          that. If they diverge, present the tradeoff.
+        output: "Single response with explicit multi-angle grounding"
+      note: >
+        This is an internal reasoning pattern, not a spawning of external
+        agents. The threads are concurrent analytical lenses applied within
+        one response pass. No activation state required.
+
   # ─── SESSION BOOTSTRAP ─────────────────────────────────────────────────────
   bootstrap:
     stage1: "bclark00/bootstrap-utils (public)"
