@@ -10,6 +10,7 @@ DEST="${TOOL_CDN_DIR:-/home/zorin/tool-cdn}"
 
 declare -A TOOLS=(
     ["filesystem-mcp.js"]="e47cd59df16c42b5db215b6c57ab1c879b44feaa042baf9f84a2871a9e6e634a"
+    ["claude-api.mjs"]="88476c8eb6f1f76dce3b18fc1c9417496251c7134caa1cb94be5862c6263c5c3"
 )
 
 mkdir -p "$DEST"
