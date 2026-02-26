@@ -468,7 +468,7 @@ For each dependent capability:
 
 ## STATISTICS (Updated)
 
-**Total Capabilities**: 9  
+**Total Capabilities**: 10  
 **Complete (5/5)**: 3 (33%) - Meta, Register, Bootstrap  
 **Incomplete (<3/5)**: 6 (67%)  
 **Average Score**: 2.67/5  
@@ -661,3 +661,48 @@ print(genome['ai_behavior_specifications']['activation_sequence']['welcome_messa
 - Trigger: 'find files', 'search filesystem', 'scout search'
 
 **Enforcement Layers**: 3/5 (bootstrap docs, MCP registration, trigger mechanism)
+
+---
+
+### CAP-010: Claude Query Tool (Conversation Retrieval + Direct Inference)
+**Problem**: Built-in conversation_search returns truncated snippets only. No way to retrieve full conversation history or call Claude API directly from tools/bootstrap context.
+**Location**: `bootstrap-utils/tools/claude-query.mjs`
+**Reference impl**: `genesis-docs-canon/reference-implementations/claude-client.ts`
+**Created**: 2026-02-26
+
+**Enforcement Layers**:
+- ✅ **Layer 1: Bootstrap** — In bootstrap-utils/tools/, loaded by Stage 2
+- ✅ **Layer 2: Triggers** — "get full conversation", "fetch chat history", "query API directly", "retrieve messages"
+- ✅ **Layer 3: Red Flags** — conversation_search returning snippets = use this tool instead
+- ✅ **Layer 4: Discovery** — tools/ dir, CAPABILITIES_REGISTER, BOOTSTRAP_INSTRUCTIONS
+- ✅ **Layer 5: Verification** — smoke test: `CLAUDE_API_KEY=... node tools/claude-query.mjs ask "ping"`
+
+**Commands**:
+```bash
+# Inference (API key only — no cookies needed)
+CLAUDE_API_KEY=sk-ant-api03-... node tools/claude-query.mjs ask "Prompt here"
+CLAUDE_API_KEY=... node tools/claude-query.mjs ask --system "You are..." --stream "Prompt"
+
+# Full conversation retrieval (requires session cookies)
+CLAUDE_SESSION_KEY=sk-ant-sid01-... \
+CLAUDE_ORG_UUID=bfe5a4ce-326f-4441-9cfd-a14dfcad2a64 \
+  node tools/claude-query.mjs get-chat <uuid> --all
+
+# List conversations
+CLAUDE_SESSION_KEY=... CLAUDE_ORG_UUID=... \
+  node tools/claude-query.mjs list-chats --limit 20
+```
+
+**Known constraints**:
+- Web commands (get-chat, list-chats) require valid CF cookies. If Cloudflare blocks, provide fresh `CLAUDE_COOKIE` (full cookie string from DevTools). Use `claude-cf-solver.ts` for automated refresh.
+- API key in Memory item 2. Session cookies must be provided fresh per session.
+- Org UUID: `bfe5a4ce-326f-4441-9cfd-a14dfcad2a64`
+
+**Dependencies**:
+- **Requires**: CAP-009 (Bootstrap — for discovery), valid credentials from Memory
+- **Required By**: Any session needing full conversation history or direct API inference
+- **Side Effects**: None — read-only for web commands; inference creates no persistent state
+
+**Score**: 5/5 ✅
+**Status**: COMPLETE ✅
+**Risk Level**: HIGH (critical for corpus integrity verification workflow)
