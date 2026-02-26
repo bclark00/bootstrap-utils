@@ -40,6 +40,7 @@ open('/tmp/_tool_cdn_tmp', 'wb').write(content)
     fi
 
     mv /tmp/_tool_cdn_tmp "$outpath"
+    chmod +x "$outpath"
     echo "  OK: $outpath"
 done
 
