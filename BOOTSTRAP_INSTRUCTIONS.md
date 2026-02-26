@@ -85,3 +85,29 @@ Once Stage 2 completes, consult CAPABILITIES_REGISTER.md for available
 tools, active repos, and current infrastructure state.
 
 All new repos default to **private** unless explicitly designated otherwise.
+
+---
+
+## Tools
+
+After bootstrap completes, these tools are available in `tools/`:
+
+### claude-query.mjs (CAP-010)
+
+Direct Claude API and conversation retrieval. Zero npm dependencies.
+
+```bash
+# Inference — API key from Memory item 2
+CLAUDE_API_KEY=<key> node tools/claude-query.mjs ask "Prompt"
+
+# Full conversation retrieval — requires fresh session cookies
+CLAUDE_SESSION_KEY=<sid> CLAUDE_ORG_UUID=bfe5a4ce-326f-4441-9cfd-a14dfcad2a64 \
+  node tools/claude-query.mjs get-chat <conversation-uuid> --all
+
+# List recent chats
+CLAUDE_SESSION_KEY=<sid> CLAUDE_ORG_UUID=... node tools/claude-query.mjs list-chats
+```
+
+Use this instead of `conversation_search` when full message history is needed.
+`conversation_search` returns snippets only. `get-chat` returns every token.
+
