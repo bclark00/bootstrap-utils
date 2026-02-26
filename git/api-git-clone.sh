@@ -59,8 +59,8 @@ echo "✓ Extracted $FILE_COUNT files"
 
 # Initialize git
 echo "[5/5] Initializing git repository..."
-git config --global user.email "bclark00@gmail.com" 2>/dev/null
-git config --global user.name "Brandon Clark" 2>/dev/null
+git config --global user.email "${GIT_AUTHOR_EMAIL:-git@localhost}" 2>/dev/null
+git config --global user.name "${GIT_AUTHOR_NAME:-git}" 2>/dev/null
 git init -q
 git remote add origin "https://github.com/$OWNER/$REPO_NAME.git"
 git remote set-url --push origin "https://$TOKEN@github.com/$OWNER/$REPO_NAME.git"
