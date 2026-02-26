@@ -1,6 +1,6 @@
 #!/bin/bash
 # deploy-tools.sh — Pull tool-cdn tools, verify SHA256, install locally
-# Run once (or on update). After this Claude Desktop uses local verified copies.
+# Reflects deployed MCP tools into claude_desktop_config.json automatically.
 
 set -euo pipefail
 
@@ -21,7 +21,7 @@ for file in "${!TOOLS[@]}"; do
 
     echo "Fetching $file..."
     python3 -c "
-import urllib.request, json, base64, sys
+import urllib.request, json, base64
 resp = urllib.request.urlopen(urllib.request.Request(
     '$CDN/$file',
     headers={'Authorization': 'Bearer $TOKEN'}
@@ -46,3 +46,65 @@ done
 
 echo ""
 echo "All tools verified and installed to $DEST"
+
+# Reflect deployed MCP servers into claude_desktop_config.json
+CONFIG_DIR="$HOME/.config/Claude"
+CONFIG="$CONFIG_DIR/claude_desktop_config.json"
+mkdir -p "$CONFIG_DIR"
+
+python3 << PYEOF
+import json, os
+
+config_path = os.path.expanduser("$CONFIG")
+dest = "$DEST"
+home = os.path.expanduser("~")
+
+# Load existing or start fresh
+try:
+    with open(config_path) as f:
+        config = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    config = {}
+
+config.setdefault("mcpServers", {})
+
+# Map: filename -> MCP server spec (None = CLI tool, not a server)
+MCP_SERVERS = {
+    "filesystem-mcp.js": {
+        "name": "filesystem",
+        "spec": {
+            "command": "node",
+            "args": [
+                f"{dest}/filesystem-mcp.js",
+                home,
+                f"{home}/repos"
+            ]
+        }
+    },
+    "claude-api.mjs": None,
+}
+
+changed = False
+for filename, entry in MCP_SERVERS.items():
+    full_path = os.path.join(dest, filename)
+    if not os.path.exists(full_path) or entry is None:
+        continue
+    name = entry["name"]
+    spec = entry["spec"]
+    if config["mcpServers"].get(name) != spec:
+        config["mcpServers"][name] = spec
+        print(f"  MCP server registered: {name}")
+        changed = True
+    else:
+        print(f"  MCP server already current: {name}")
+
+if changed:
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+    print(f"  Config written: {config_path}")
+else:
+    print(f"  Config unchanged: {config_path}")
+PYEOF
+
+echo ""
+echo "Restart Claude Desktop to load new MCP servers."
