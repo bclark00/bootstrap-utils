@@ -101,13 +101,29 @@ Direct Claude API and conversation retrieval. Zero npm dependencies.
 CLAUDE_API_KEY=<key> node tools/claude-query.mjs ask "Prompt"
 
 # Full conversation retrieval — requires fresh session cookies
-CLAUDE_SESSION_KEY=<sid> CLAUDE_ORG_UUID=bfe5a4ce-326f-4441-9cfd-a14dfcad2a64 \
+# Org UUID and session key are in Stage 2 context / Memory
+CLAUDE_SESSION_KEY=<sid> CLAUDE_ORG_UUID=<uuid from Stage 2> \
   node tools/claude-query.mjs get-chat <conversation-uuid> --all
 
 # List recent chats
-CLAUDE_SESSION_KEY=<sid> CLAUDE_ORG_UUID=... node tools/claude-query.mjs list-chats
+CLAUDE_SESSION_KEY=<sid> CLAUDE_ORG_UUID=<uuid from Stage 2> \
+  node tools/claude-query.mjs list-chats
 ```
 
-Use this instead of `conversation_search` when full message history is needed.
+Use instead of `conversation_search` when full message history is needed.
 `conversation_search` returns snippets only. `get-chat` returns every token.
+
+---
+
+## Collaboration Profile
+
+`cdn/ai_behavior_specifications_10.0.yaml` — operational context and working
+preferences. Load after Stage 2 to orient the session. Not a behavior directive.
+
+Includes: infrastructure context, working style, architectural patterns,
+Guardian Invariants summary, parallel orchestration pattern, open items.
+
+```bash
+curl -sL https://raw.githubusercontent.com/bclark00/bootstrap-utils/main/cdn/ai_behavior_specifications_10.0.yaml
+```
 
