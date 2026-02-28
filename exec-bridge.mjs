@@ -1,27 +1,29 @@
 #!/usr/bin/env node
 /**
- * exec-bridge.mjs v2 -- File-based exec IPC between Claude container and host
+ * exec-bridge.mjs v3 -- Unified exec IPC daemon for Claude container <-> host
  *
- * Runs as zorin (unprivileged). For root commands use exec-springboard.mjs.
+ * Runs as root via systemd. Handles both standard and elevated requests.
+ * Standard requests are privilege-dropped to ZORIN_UID before exec.
+ * Elevated requests run as root.
  *
  * Protocol:
- *   Container writes:  ~/.exec-bridge/req-{id}.json
- *     { id, cmd, cwd?, env?, timeout_ms? }
+ *   Standard:  ~/.exec-bridge/req-{id}.json   -> res-{id}.json
+ *   Elevated:  ~/.exec-bridge/elevated/req-{id}.json -> elevated/res-{id}.json
  *
- *   Host executes and writes: ~/.exec-bridge/res-{id}.json
- *     { id, stdout, stderr, exit_code, duration_ms, error? }
- *
- *   Container reads response then deletes res file.
- *   Host deletes req file immediately after picking it up.
+ *   Request:  { id, cmd, cwd?, env?, timeout_ms? }
+ *   Response: { id, stdout, stderr, exit_code, duration_ms, ts, error? }
  *
  * Environment variables:
- *   BRIDGE_DIR         default: ~/.exec-bridge
- *   POLL_INTERVAL      ms between polls, default: 200
- *   EXEC_TIMEOUT_MS    per-command timeout, default: 30000 (max 120000)
- *   MAX_OUTPUT         max stdout+stderr bytes, default: 2MB
- *   MAX_CONCURRENT     max parallel commands, default: 10
- *   CLEANUP_AGE_MS     delete res files older than this, default: 1800000 (30 min)
- *   CLEANUP_INTERVAL   how often to scan for stale files, default: 300000 (5 min)
+ *   BRIDGE_DIR         default: /home/zorin/.exec-bridge
+ *   POLL_INTERVAL      ms, default: 200
+ *   EXEC_TIMEOUT_MS    standard timeout, default: 30000 (max 120000)
+ *   ELEV_TIMEOUT_MS    elevated timeout, default: 60000 (max 300000)
+ *   MAX_OUTPUT         max stdout+stderr bytes, default: 2MB (elevated: 4MB)
+ *   MAX_CONCURRENT     max parallel commands across both queues, default: 15
+ *   CLEANUP_AGE_MS     delete res files older than this, default: 1800000 (30m)
+ *   CLEANUP_INTERVAL   how often to scan for stale files, default: 300000 (5m)
+ *   ZORIN_UID          uid to drop to for standard requests, default: 1000
+ *   ZORIN_GID          gid to drop to for standard requests, default: 1000
  *
  * (c) 2025-2026 Brandon Clark. All Rights Reserved.
  */
@@ -36,24 +38,33 @@ const execAsync = promisify(exec);
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const BRIDGE_DIR        = process.env.BRIDGE_DIR        || path.join(os.homedir(), '.exec-bridge');
-const POLL_INTERVAL     = parseInt(process.env.POLL_INTERVAL     || '200');
-const EXEC_TIMEOUT_MS   = parseInt(process.env.EXEC_TIMEOUT_MS   || '30000');
-const MAX_OUTPUT        = parseInt(process.env.MAX_OUTPUT        || String(2 * 1024 * 1024));
-const MAX_CONCURRENT    = parseInt(process.env.MAX_CONCURRENT    || '10');
-const CLEANUP_AGE_MS    = parseInt(process.env.CLEANUP_AGE_MS    || String(30 * 60 * 1000));
-const CLEANUP_INTERVAL  = parseInt(process.env.CLEANUP_INTERVAL  || String(5  * 60 * 1000));
+const ZORIN_HOME      = '/home/zorin';
+const ZORIN_UID       = parseInt(process.env.ZORIN_UID       || '1000');
+const ZORIN_GID       = parseInt(process.env.ZORIN_GID       || '1000');
+const BRIDGE_DIR      = process.env.BRIDGE_DIR      || path.join(ZORIN_HOME, '.exec-bridge');
+const ELEVATED_DIR    = path.join(BRIDGE_DIR, 'elevated');
+const POLL_INTERVAL   = parseInt(process.env.POLL_INTERVAL   || '200');
+const EXEC_TIMEOUT_MS = parseInt(process.env.EXEC_TIMEOUT_MS || '30000');
+const ELEV_TIMEOUT_MS = parseInt(process.env.ELEV_TIMEOUT_MS || '60000');
+const MAX_OUTPUT      = parseInt(process.env.MAX_OUTPUT      || String(2 * 1024 * 1024));
+const MAX_ELEV_OUTPUT = MAX_OUTPUT * 2;
+const MAX_CONCURRENT  = parseInt(process.env.MAX_CONCURRENT  || '15');
+const CLEANUP_AGE_MS  = parseInt(process.env.CLEANUP_AGE_MS  || String(30 * 60 * 1000));
+const CLEANUP_INTERVAL= parseInt(process.env.CLEANUP_INTERVAL|| String(5  * 60 * 1000));
 
-// PATH augmented to include NVM node and common tool locations -- systemd
-// provides only a minimal PATH that omits these.
-const NVM_NODE_BIN = path.join(os.homedir(), '.nvm', 'versions', 'node',
-  fs.readdirSync(path.join(os.homedir(), '.nvm', 'versions', 'node'))
-    .filter(v => v.startsWith('v'))
-    .sort()
-    .pop() || 'v24.0.0',
-  'bin');
+// Detect latest NVM node bin for PATH augmentation
+function detectNvmNodeBin() {
+  try {
+    const base = path.join(ZORIN_HOME, '.nvm', 'versions', 'node');
+    const vers = fs.readdirSync(base).filter(v => v.startsWith('v')).sort();
+    if (vers.length) return path.join(base, vers[vers.length - 1], 'bin');
+  } catch (_) {}
+  return '';
+}
 
-const AUGMENTED_PATH = [
+const NVM_NODE_BIN = detectNvmNodeBin();
+
+const BASE_PATH = [
   NVM_NODE_BIN,
   '/usr/local/sbin',
   '/usr/local/bin',
@@ -62,8 +73,8 @@ const AUGMENTED_PATH = [
   '/sbin',
   '/bin',
   '/snap/bin',
-  path.join(os.homedir(), '.local', 'bin'),
-].join(':');
+  path.join(ZORIN_HOME, '.local', 'bin'),
+].filter(Boolean).join(':');
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -79,94 +90,111 @@ const warn = (...a) => console.warn(`[${ts()}] [EXEC-BRIDGE] WARN`, ...a);
 
 // ─── Concurrency control ─────────────────────────────────────────────────────
 
-const _inflight = new Set();   // currently executing request IDs
-const _queue    = [];          // pending req filenames when at capacity
+const _inflight = new Set();
+const _queue    = [];   // { reqFile, dir, elevated }
 
 function tryDequeue() {
   while (_inflight.size < MAX_CONCURRENT && _queue.length > 0) {
-    const reqFile = _queue.shift();
-    processRequest(reqFile);
+    const item = _queue.shift();
+    processRequest(item.reqFile, item.dir, item.elevated);
   }
 }
 
 // ─── Request processor ───────────────────────────────────────────────────────
 
-async function processRequest(reqFile) {
-  if (_inflight.has(reqFile)) return;
+async function processRequest(reqFile, dir, elevated) {
+  const key = `${elevated ? 'e' : 's'}:${reqFile}`;
+  if (_inflight.has(key)) return;
 
-  // Respect concurrency cap
   if (_inflight.size >= MAX_CONCURRENT) {
-    if (!_queue.includes(reqFile)) _queue.push(reqFile);
+    if (!_queue.find(q => q.reqFile === reqFile && q.elevated === elevated))
+      _queue.push({ reqFile, dir, elevated });
     return;
   }
 
-  _inflight.add(reqFile);
+  _inflight.add(key);
 
-  const reqPath = path.join(BRIDGE_DIR, reqFile);
+  const reqPath = path.join(dir, reqFile);
   const id      = reqFile.replace(/^req-/, '').replace(/\.json$/, '');
-  const resPath = path.join(BRIDGE_DIR, `res-${id}.json`);
+  const resPath = path.join(dir, `res-${id}.json`);
 
   let req;
   try {
     req = JSON.parse(fs.readFileSync(reqPath, 'utf8'));
   } catch (e) {
     warn(`Failed to read ${reqFile}: ${e.message}`);
-    _inflight.delete(reqFile);
+    _inflight.delete(key);
     tryDequeue();
     return;
   }
 
   if (!req.cmd || typeof req.cmd !== 'string') {
-    writeResult(resPath, id, '', 'Invalid request: cmd required', 1, 0, 'invalid');
+    writeResult(resPath, id, '', 'Invalid request: cmd required', 1, 0, 'invalid', elevated);
     tryUnlink(reqPath);
-    _inflight.delete(reqFile);
+    _inflight.delete(key);
     tryDequeue();
     return;
   }
 
-  const cwd     = req.cwd || os.homedir();
-  const timeout = Math.min(req.timeout_ms || EXEC_TIMEOUT_MS, 120_000);
-  const t0      = Date.now();
+  const maxTimeout = elevated ? 300_000 : 120_000;
+  const defTimeout = elevated ? ELEV_TIMEOUT_MS : EXEC_TIMEOUT_MS;
+  const cwd        = req.cwd || ZORIN_HOME;
+  const timeout    = Math.min(req.timeout_ms || defTimeout, maxTimeout);
+  const maxBuf     = elevated ? MAX_ELEV_OUTPUT : MAX_OUTPUT;
+  const t0         = Date.now();
+  const label      = elevated ? 'elevated' : 'standard';
 
-  log(`exec [${id.slice(0, 8)}] ${req.cmd.slice(0, 100)}`);
+  log(`exec [${id.slice(0, 8)}] (${label}) ${req.cmd.slice(0, 100)}`);
 
-  // Delete req immediately so we don't reprocess on crash/restart
+  // Delete req immediately -- prevents reprocessing on restart
   tryUnlink(reqPath);
 
+  // Build env: elevated keeps root context, standard drops to zorin
+  const baseEnv = {
+    PATH: BASE_PATH,
+    DEBIAN_FRONTEND: 'noninteractive',
+    ...(req.env || {}),
+  };
+
+  const execEnv = elevated
+    ? { ...baseEnv, HOME: ZORIN_HOME, USER: 'root' }
+    : { ...baseEnv, HOME: ZORIN_HOME, USER: 'zorin' };
+
+  // Exec options: standard requests drop privileges to ZORIN_UID/GID
+  const execOpts = {
+    cwd, timeout, maxBuffer: maxBuf,
+    env: execEnv,
+    shell: '/bin/bash',
+    ...(elevated ? {} : { uid: ZORIN_UID, gid: ZORIN_GID }),
+  };
+
   try {
-    const { stdout, stderr } = await execAsync(req.cmd, {
-      cwd,
-      timeout,
-      maxBuffer: MAX_OUTPUT,
-      env: {
-        ...process.env,
-        PATH: AUGMENTED_PATH,
-        HOME: os.homedir(),
-        USER: os.userInfo().username,
-        ...(req.env || {}),
-      },
-      shell: '/bin/bash',
-    });
+    const { stdout, stderr } = await execAsync(req.cmd, execOpts);
     const duration_ms = Date.now() - t0;
-    writeResult(resPath, id, stdout, stderr, 0, duration_ms, null);
+    writeResult(resPath, id, stdout, stderr, 0, duration_ms, null, elevated);
     log(`done [${id.slice(0, 8)}] exit=0 ${duration_ms}ms`);
   } catch (e) {
     const duration_ms = Date.now() - t0;
     writeResult(resPath, id,
       e.stdout || '', e.stderr || e.message,
       e.code ?? 1, duration_ms,
-      e.killed ? 'timeout' : e.message);
+      e.killed ? 'timeout' : e.message,
+      elevated);
     log(`done [${id.slice(0, 8)}] exit=${e.code ?? 1} ${duration_ms}ms`);
   }
 
-  _inflight.delete(reqFile);
+  _inflight.delete(key);
   tryDequeue();
 }
 
-function writeResult(resPath, id, stdout, stderr, exit_code, duration_ms, error) {
+function writeResult(resPath, id, stdout, stderr, exit_code, duration_ms, error, elevated) {
   const res = { id, stdout, stderr, exit_code, duration_ms, ts: new Date().toISOString() };
   if (error) res.error = error;
   fs.writeFileSync(resPath, JSON.stringify(res, null, 2));
+  // Ensure zorin can read elevated responses
+  if (elevated) {
+    try { fs.chownSync(resPath, ZORIN_UID, ZORIN_GID); } catch (_) {}
+  }
 }
 
 function tryUnlink(p) {
@@ -176,66 +204,69 @@ function tryUnlink(p) {
 // ─── Poll loop ────────────────────────────────────────────────────────────────
 
 function poll() {
+  // Standard queue
   let files;
-  try {
-    files = fs.readdirSync(BRIDGE_DIR);
-  } catch (_) { return; }
-
+  try { files = fs.readdirSync(BRIDGE_DIR); } catch (_) { files = []; }
   for (const f of files) {
-    if (f.startsWith('req-') && f.endsWith('.json')) {
-      processRequest(f);
-    }
+    if (f.startsWith('req-') && f.endsWith('.json'))
+      processRequest(f, BRIDGE_DIR, false);
+  }
+
+  // Elevated queue
+  let efiles;
+  try { efiles = fs.readdirSync(ELEVATED_DIR); } catch (_) { efiles = []; }
+  for (const f of efiles) {
+    if (f.startsWith('req-') && f.endsWith('.json'))
+      processRequest(f, ELEVATED_DIR, true);
   }
 }
 
 // ─── Stale file cleanup ───────────────────────────────────────────────────────
 
-function cleanupStale() {
+function cleanupDir(dir, label) {
   let files;
-  try { files = fs.readdirSync(BRIDGE_DIR); }
-  catch (_) { return; }
-
+  try { files = fs.readdirSync(dir); } catch (_) { return 0; }
   const cutoff = Date.now() - CLEANUP_AGE_MS;
   let removed = 0;
   for (const f of files) {
-    // Only clean up res files, never req files (those are active requests)
     if (!f.startsWith('res-') || !f.endsWith('.json')) continue;
-    const fp = path.join(BRIDGE_DIR, f);
+    const fp = path.join(dir, f);
     try {
-      const stat = fs.statSync(fp);
-      if (stat.mtimeMs < cutoff) {
-        fs.unlinkSync(fp);
-        removed++;
-      }
+      if (fs.statSync(fp).mtimeMs < cutoff) { fs.unlinkSync(fp); removed++; }
     } catch (_) {}
   }
-  if (removed > 0) log(`cleanup: removed ${removed} stale res file(s)`);
+  if (removed > 0) log(`cleanup [${label}]: removed ${removed} stale file(s)`);
+  return removed;
+}
+
+function cleanupAll() {
+  cleanupDir(BRIDGE_DIR, 'standard');
+  cleanupDir(ELEVATED_DIR, 'elevated');
 }
 
 // ─── Startup canary ───────────────────────────────────────────────────────────
 
-async function runCanary() {
+async function runCanary(dir, cmd, label) {
   const id      = `canary-${Date.now()}`;
-  const reqPath = path.join(BRIDGE_DIR, `req-${id}.json`);
-  const resPath = path.join(BRIDGE_DIR, `res-${id}.json`);
+  const reqPath = path.join(dir, `req-${id}.json`);
+  const resPath = path.join(dir, `res-${id}.json`);
 
-  fs.writeFileSync(reqPath, JSON.stringify({ id, cmd: 'echo exec-bridge-ok' }));
+  fs.writeFileSync(reqPath, JSON.stringify({ id, cmd }));
 
-  // Wait up to 3 seconds
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 100));
     if (fs.existsSync(resPath)) {
       const res = JSON.parse(fs.readFileSync(resPath, 'utf8'));
       tryUnlink(resPath);
-      if (res.exit_code === 0 && res.stdout.includes('exec-bridge-ok')) {
-        log('canary: PASS');
+      if (res.exit_code === 0) {
+        log(`canary [${label}]: PASS -- ${res.stdout.trim().replace(/\n/g, ' | ')}`);
         return true;
       }
-      log(`canary: FAIL (exit=${res.exit_code} stdout=${res.stdout.trim()})`);
+      log(`canary [${label}]: FAIL -- exit=${res.exit_code} ${res.stderr?.trim()}`);
       return false;
     }
   }
-  log('canary: TIMEOUT');
+  log(`canary [${label}]: TIMEOUT`);
   tryUnlink(reqPath);
   return false;
 }
@@ -243,30 +274,43 @@ async function runCanary() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  fs.mkdirSync(BRIDGE_DIR, { recursive: true, mode: 0o700 });
+  // Must run as root
+  if (process.getuid?.() !== 0) {
+    console.error('exec-bridge v3 must run as root (for privilege-drop to work)');
+    process.exit(1);
+  }
 
-  log(`starting v2 (PID ${process.pid})`);
-  log(`bridge dir  : ${BRIDGE_DIR}`);
-  log(`nvm node bin: ${NVM_NODE_BIN}`);
-  log(`poll interval: ${POLL_INTERVAL}ms  timeout: ${EXEC_TIMEOUT_MS}ms  max_concurrent: ${MAX_CONCURRENT}`);
-  log(`cleanup: every ${CLEANUP_INTERVAL / 1000}s, age > ${CLEANUP_AGE_MS / 60000}min`);
+  // Create dirs with correct permissions
+  fs.mkdirSync(BRIDGE_DIR,   { recursive: true, mode: 0o770 });
+  fs.mkdirSync(ELEVATED_DIR, { recursive: true, mode: 0o770 });
+  try { fs.chownSync(BRIDGE_DIR,   ZORIN_UID, ZORIN_GID); } catch (_) {}
+  try { fs.chownSync(ELEVATED_DIR, ZORIN_UID, ZORIN_GID); } catch (_) {}
 
-  // Clean up any stale files from previous sessions on startup
-  cleanupStale();
+  log(`starting v3 (PID ${process.pid}, uid=0)`);
+  log(`bridge dir   : ${BRIDGE_DIR}`);
+  log(`elevated dir : ${ELEVATED_DIR}`);
+  log(`nvm node bin : ${NVM_NODE_BIN || '(not found)'}`);
+  log(`poll interval: ${POLL_INTERVAL}ms`);
+  log(`timeouts     : standard=${EXEC_TIMEOUT_MS}ms  elevated=${ELEV_TIMEOUT_MS}ms`);
+  log(`max_concurrent: ${MAX_CONCURRENT}  cleanup_age: ${CLEANUP_AGE_MS / 60000}min`);
 
-  // Begin polling
+  // Startup cleanup
+  cleanupAll();
+
+  // Poll loop + periodic cleanup
   setInterval(poll, POLL_INTERVAL);
+  setInterval(cleanupAll, CLEANUP_INTERVAL);
   poll();
 
-  // Periodic stale file cleanup
-  setInterval(cleanupStale, CLEANUP_INTERVAL);
+  log('ready -- polling standard + elevated queues');
 
-  log('ready -- polling for requests');
+  // Dual canary after stabilization
+  setTimeout(async () => {
+    await runCanary(BRIDGE_DIR,   'echo standard-ok && id', 'standard');
+    await runCanary(ELEVATED_DIR, 'echo elevated-ok && id', 'elevated');
+  }, 500);
 
-  // Self-test after a short delay (let poll loop stabilize)
-  setTimeout(() => runCanary(), 500);
-
-  process.on('SIGINT',  () => { log('SIGINT'); process.exit(0); });
+  process.on('SIGINT',  () => { log('SIGINT');  process.exit(0); });
   process.on('SIGTERM', () => { log('SIGTERM'); process.exit(0); });
 }
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # bootstrap-exec-bridge.sh
 #
-# Idempotent installer for exec-bridge v2 + exec-springboard v2.
+# Idempotent installer for exec-bridge v3 (unified standard + elevated IPC).
+# Single root daemon with privilege-drop for standard requests.
 # Safe to run multiple times. Handles install, upgrade, and repair.
 #
 # Usage:
@@ -9,17 +10,16 @@
 #
 # What it does:
 #   1. Detects NVM node path
-#   2. Writes exec-bridge.mjs and exec-springboard.mjs to /home/zorin/
-#   3. Writes systemd service files to /etc/systemd/system/
-#   4. daemon-reload, enable, restart both services
-#   5. Runs canary self-test
-#   6. Cleans up stale .exec-bridge/ files
+#   2. Writes exec-bridge.mjs to /home/zorin/
+#   3. Writes systemd service file (User=root) to /etc/systemd/system/
+#   4. Stops and disables legacy exec-springboard.service if present
+#   5. daemon-reload, enable, restart exec-bridge
+#   6. Dual canary: standard (runs as zorin) + elevated (runs as root)
+#   7. Cleans up stale .exec-bridge/ files
 #
 # (c) 2025-2026 Brandon Clark. All Rights Reserved.
 
 set -euo pipefail
-
-# ─── Config ───────────────────────────────────────────────────────────────────
 
 ZORIN_HOME="/home/zorin"
 BRIDGE_DIR="${ZORIN_HOME}/.exec-bridge"
@@ -27,67 +27,62 @@ ELEVATED_DIR="${BRIDGE_DIR}/elevated"
 ZORIN_UID=1000
 ZORIN_GID=1000
 
-# ─── Colors ───────────────────────────────────────────────────────────────────
-
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 ok()   { echo -e "${GREEN}  [OK]${NC} $*"; }
 info() { echo -e "${YELLOW}  [..] $*${NC}"; }
 fail() { echo -e "${RED}  [!!] $*${NC}"; exit 1; }
-
-# ─── Root check ───────────────────────────────────────────────────────────────
 
 [[ $EUID -eq 0 ]] || fail "Run as root: sudo bash $0"
 
 # ─── Detect NVM node ─────────────────────────────────────────────────────────
 
 NVM_VERSIONS="${ZORIN_HOME}/.nvm/versions/node"
-if [[ ! -d "$NVM_VERSIONS" ]]; then
-  fail "NVM not found at ${NVM_VERSIONS}. Install NVM first."
-fi
-
+[[ -d "$NVM_VERSIONS" ]] || fail "NVM not found at ${NVM_VERSIONS}"
 NODE_VERSION=$(ls "$NVM_VERSIONS" | grep '^v' | sort -V | tail -1)
 [[ -n "$NODE_VERSION" ]] || fail "No node version found in ${NVM_VERSIONS}"
-
 NODE_BIN="${NVM_VERSIONS}/${NODE_VERSION}/bin/node"
 [[ -x "$NODE_BIN" ]] || fail "node not executable: ${NODE_BIN}"
 ok "Node: ${NODE_BIN} ($(${NODE_BIN} --version))"
 
-# ─── Create bridge directory ──────────────────────────────────────────────────
+# ─── Create bridge directories ────────────────────────────────────────────────
 
 info "Creating bridge dirs..."
 mkdir -p "$BRIDGE_DIR" "$ELEVATED_DIR"
-chmod 700 "$BRIDGE_DIR"
-chmod 770 "$ELEVATED_DIR"
-chown "${ZORIN_UID}:${ZORIN_GID}" "$BRIDGE_DIR"
-chown "${ZORIN_UID}:${ZORIN_GID}" "$ELEVATED_DIR"
+chmod 770 "$BRIDGE_DIR" "$ELEVATED_DIR"
+chown "${ZORIN_UID}:${ZORIN_GID}" "$BRIDGE_DIR" "$ELEVATED_DIR"
 ok "Bridge dirs: ${BRIDGE_DIR}"
 
-# ─── Clean up stale res files ─────────────────────────────────────────────────
+# ─── Clean stale res files ────────────────────────────────────────────────────
 
 info "Cleaning stale res files..."
 STALE=0
 for f in "${BRIDGE_DIR}"/res-*.json "${ELEVATED_DIR}"/res-*.json; do
   [[ -f "$f" ]] || continue
   AGE=$(( $(date +%s) - $(stat -c %Y "$f") ))
-  if [[ $AGE -gt 1800 ]]; then
-    rm -f "$f"
-    (( STALE++ )) || true
-  fi
+  if [[ $AGE -gt 1800 ]]; then rm -f "$f"; (( STALE++ )) || true; fi
 done
-ok "Cleaned ${STALE} stale res file(s)"
+ok "Cleaned ${STALE} stale file(s)"
 
-# ─── Write service files ──────────────────────────────────────────────────────
+# ─── Retire legacy springboard if present ────────────────────────────────────
 
-info "Writing systemd service files..."
+if systemctl is-enabled exec-springboard.service &>/dev/null; then
+  info "Retiring legacy exec-springboard.service..."
+  systemctl stop    exec-springboard.service 2>/dev/null || true
+  systemctl disable exec-springboard.service 2>/dev/null || true
+  ok "exec-springboard disabled"
+fi
 
+# ─── Write service file ───────────────────────────────────────────────────────
+
+info "Writing systemd service file..."
 cat > /etc/systemd/system/exec-bridge.service << EOF
 [Unit]
-Description=Claude exec bridge v2 (file-based IPC, zorin)
+Description=Claude exec bridge v3 (unified standard + elevated IPC)
 After=network.target
 
 [Service]
 Type=simple
-User=zorin
+User=root
 WorkingDirectory=${ZORIN_HOME}
 ExecStart=${NODE_BIN} ${ZORIN_HOME}/exec-bridge.mjs
 Restart=on-failure
@@ -98,130 +93,68 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 EOF
-
-cat > /etc/systemd/system/exec-springboard.service << EOF
-[Unit]
-Description=Claude exec springboard v2 (elevated/root worker)
-After=network.target exec-bridge.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=${ZORIN_HOME}
-ExecStart=${NODE_BIN} ${ZORIN_HOME}/exec-springboard.mjs
-Restart=on-failure
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-ok "Service files written"
+ok "Service file written"
 
 # ─── Reload, enable, restart ──────────────────────────────────────────────────
 
-info "daemon-reload..."
 systemctl daemon-reload
 ok "daemon-reload"
-
-info "Enabling services..."
-systemctl enable exec-bridge.service exec-springboard.service
-ok "Services enabled"
-
-info "Restarting services..."
+systemctl enable exec-bridge.service
+ok "exec-bridge enabled"
 systemctl restart exec-bridge.service
-systemctl restart exec-springboard.service
 sleep 2
-ok "Services restarted"
 
-# ─── Status check ─────────────────────────────────────────────────────────────
+STATUS=$(systemctl is-active exec-bridge.service)
+[[ "$STATUS" == "active" ]] || fail "exec-bridge not active (${STATUS})"
+ok "exec-bridge: ${STATUS}"
 
-BRIDGE_STATUS=$(systemctl is-active exec-bridge.service)
-SPRING_STATUS=$(systemctl is-active exec-springboard.service)
+# ─── Standard canary (privilege-dropped to zorin) ────────────────────────────
 
-[[ "$BRIDGE_STATUS" == "active" ]] || fail "exec-bridge not active (${BRIDGE_STATUS})"
-[[ "$SPRING_STATUS" == "active" ]] || fail "exec-springboard not active (${SPRING_STATUS})"
-ok "exec-bridge: ${BRIDGE_STATUS}"
-ok "exec-springboard: ${SPRING_STATUS}"
-
-# ─── Canary test ──────────────────────────────────────────────────────────────
-
-info "Running canary test..."
-
-CANARY_ID="bootstrap-canary-$$"
-REQ_FILE="${BRIDGE_DIR}/req-${CANARY_ID}.json"
-RES_FILE="${BRIDGE_DIR}/res-${CANARY_ID}.json"
-
-echo "{\"id\":\"${CANARY_ID}\",\"cmd\":\"echo bootstrap-canary-ok && node --version\"}" > "$REQ_FILE"
-chown "${ZORIN_UID}:${ZORIN_GID}" "$REQ_FILE"
-
-# Poll up to 5 seconds
-for i in $(seq 1 25); do
-  sleep 0.2
-  [[ -f "$RES_FILE" ]] && break
-done
-
-if [[ ! -f "$RES_FILE" ]]; then
-  fail "Canary timed out -- exec-bridge may not be processing"
-fi
-
-CANARY_OUT=$(python3 -c "import json,sys; d=json.load(open('${RES_FILE}')); print(d['stdout'].strip()); print('exit', d['exit_code'])" 2>/dev/null || echo "parse error")
-rm -f "$RES_FILE"
-
-if echo "$CANARY_OUT" | grep -q "bootstrap-canary-ok"; then
-  ok "Canary PASS: ${CANARY_OUT}"
-else
-  fail "Canary FAIL: ${CANARY_OUT}"
-fi
-
-# ─── Elevated canary ──────────────────────────────────────────────────────────
-
-info "Running elevated canary test..."
-
-ECANARY_ID="bootstrap-ecanary-$$"
-EREQ_FILE="${ELEVATED_DIR}/req-${ECANARY_ID}.json"
-ERES_FILE="${ELEVATED_DIR}/res-${ECANARY_ID}.json"
-
-echo "{\"id\":\"${ECANARY_ID}\",\"cmd\":\"echo elevated-canary-ok && id\"}" > "$EREQ_FILE"
-chown "${ZORIN_UID}:${ZORIN_GID}" "$EREQ_FILE"
+info "Standard canary (should run as zorin)..."
+CID="bootstrap-canary-$$"
+echo "{\"id\":\"${CID}\",\"cmd\":\"echo canary-ok && id\"}" \
+  | install -m 664 -o "${ZORIN_UID}" -g "${ZORIN_GID}" /dev/stdin "${BRIDGE_DIR}/req-${CID}.json"
 
 for i in $(seq 1 25); do
   sleep 0.2
-  [[ -f "$ERES_FILE" ]] && break
+  [[ -f "${BRIDGE_DIR}/res-${CID}.json" ]] && break
 done
+[[ -f "${BRIDGE_DIR}/res-${CID}.json" ]] || fail "Standard canary timed out"
+OUT=$(python3 -c "import json; d=json.load(open('${BRIDGE_DIR}/res-${CID}.json')); print(d['stdout'].strip())" 2>/dev/null)
+rm -f "${BRIDGE_DIR}/res-${CID}.json"
+echo "$OUT" | grep -q "canary-ok"  || fail "Standard canary FAIL: ${OUT}"
+echo "$OUT" | grep -q "zorin"      || fail "Standard canary not running as zorin: ${OUT}"
+ok "Standard canary PASS: $(echo "$OUT" | tr '\n' ' ')"
 
-if [[ ! -f "$ERES_FILE" ]]; then
-  fail "Elevated canary timed out -- exec-springboard may not be processing"
-fi
+# ─── Elevated canary (should run as root) ────────────────────────────────────
 
-ECANARY_OUT=$(python3 -c "import json,sys; d=json.load(open('${ERES_FILE}')); print(d['stdout'].strip())" 2>/dev/null || echo "parse error")
-rm -f "$ERES_FILE"
+info "Elevated canary (should run as root)..."
+ECID="bootstrap-ecanary-$$"
+echo "{\"id\":\"${ECID}\",\"cmd\":\"echo elevated-ok && id\"}" \
+  | install -m 664 -o "${ZORIN_UID}" -g "${ZORIN_GID}" /dev/stdin "${ELEVATED_DIR}/req-${ECID}.json"
 
-if echo "$ECANARY_OUT" | grep -q "elevated-canary-ok"; then
-  ok "Elevated canary PASS: ${ECANARY_OUT}"
-else
-  fail "Elevated canary FAIL: ${ECANARY_OUT}"
-fi
+for i in $(seq 1 25); do
+  sleep 0.2
+  [[ -f "${ELEVATED_DIR}/res-${ECID}.json" ]] && break
+done
+[[ -f "${ELEVATED_DIR}/res-${ECID}.json" ]] || fail "Elevated canary timed out"
+EOUT=$(python3 -c "import json; d=json.load(open('${ELEVATED_DIR}/res-${ECID}.json')); print(d['stdout'].strip())" 2>/dev/null)
+rm -f "${ELEVATED_DIR}/res-${ECID}.json"
+echo "$EOUT" | grep -q "elevated-ok" || fail "Elevated canary FAIL: ${EOUT}"
+echo "$EOUT" | grep -q "root"        || fail "Elevated canary not running as root: ${EOUT}"
+ok "Elevated canary PASS: $(echo "$EOUT" | tr '\n' ' ')"
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  exec-bridge v2 bootstrap complete!${NC}"
-echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}==========================================${NC}"
+echo -e "${GREEN}  exec-bridge v3 bootstrap complete!${NC}"
+echo -e "${GREEN}==========================================${NC}"
 echo ""
-echo "  Bridge dir  : ${BRIDGE_DIR}"
-echo "  Elevated dir: ${ELEVATED_DIR}"
-echo "  Node        : ${NODE_BIN}"
+echo "  One service, two queues:"
+echo "    ~/.exec-bridge/req-{id}.json          -> runs as zorin (uid 1000)"
+echo "    ~/.exec-bridge/elevated/req-{id}.json -> runs as root"
 echo ""
-echo "  Services:"
-echo "    exec-bridge       -- runs as zorin, handles standard commands"
-echo "    exec-springboard  -- runs as root, handles elevated commands"
-echo ""
-echo "  Usage from Claude container:"
-echo "    Write: ~/.exec-bridge/req-{id}.json  = { id, cmd, cwd?, env?, timeout_ms? }"
-echo "    Read:  ~/.exec-bridge/res-{id}.json  = { id, stdout, stderr, exit_code, duration_ms }"
-echo "    Elevated: use elevated/ subdirectory"
+echo "  Request:  { id, cmd, cwd?, env?, timeout_ms? }"
+echo "  Response: { id, stdout, stderr, exit_code, duration_ms, ts }"
 echo ""
