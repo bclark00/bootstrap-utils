@@ -16,6 +16,12 @@
 #   5. daemon-reload, enable, restart exec-bridge
 #   6. Dual canary: standard (runs as zorin) + elevated (runs as root)
 #   7. Cleans up stale .exec-bridge/ files
+#   8. Deploys intent-graph MCP to /home/zorin/intent-graph/
+#   9. Wires intent-graph into Claude Desktop MCP config
+#
+# Requires:
+#   BC_TOKEN env var (bclark00 GitHub token) for cloning private repos
+#   Or repos already cloned under /home/zorin/repos/
 #
 # (c) 2025-2026 Brandon Clark. All Rights Reserved.
 
@@ -147,16 +153,107 @@ echo "$EOUT" | grep -q "elevated-ok" || fail "Elevated canary FAIL: ${EOUT}"
 echo "$EOUT" | grep -q "root"        || fail "Elevated canary not running as root: ${EOUT}"
 ok "Elevated canary PASS: $(echo "$EOUT" | tr '\n' ' ')"
 
+# ─── Intent Graph MCP ────────────────────────────────────────────────────────
+
+info "Deploying intent-graph MCP..."
+
+IG_SRC="${ZORIN_HOME}/repos/bclark00-intent-graph-mcp"
+IG_DST="${ZORIN_HOME}/intent-graph"
+IG_DB="${ZORIN_HOME}/.intent-graph.db"
+IG_REPO="https://github.com/bclark00/intent-graph-mcp.git"
+
+# Clone if not present
+if [[ ! -d "$IG_SRC" ]]; then
+  [[ -n "${BC_TOKEN:-}" ]] || fail "BC_TOKEN required to clone intent-graph-mcp (or pre-clone to ${IG_SRC})"
+  info "Cloning intent-graph-mcp..."
+  sudo -u zorin git clone "https://${BC_TOKEN}@${IG_REPO#https://}" "$IG_SRC" 2>&1
+  ok "Cloned intent-graph-mcp"
+else
+  sudo -u zorin git -C "$IG_SRC" pull --ff-only 2>&1 | tail -1
+  ok "intent-graph-mcp up to date"
+fi
+
+# Deploy files
+mkdir -p "$IG_DST"
+cp "${IG_SRC}/"*.js "${IG_SRC}/"*.sql "${IG_SRC}/"*.md "${IG_DST}/" 2>/dev/null || true
+cp "${IG_SRC}/package.json" "${IG_DST}/"
+chown -R "${ZORIN_UID}:${ZORIN_GID}" "$IG_DST"
+
+# Copy node_modules from source (avoids npm install network dependency)
+if [[ ! -d "${IG_DST}/node_modules" ]]; then
+  if [[ -d "${IG_SRC}/node_modules" ]]; then
+    cp -r "${IG_SRC}/node_modules" "${IG_DST}/"
+    ok "node_modules copied from source repo"
+  else
+    info "Running npm install for intent-graph (may take a moment)..."
+    sudo -u zorin bash -c "cd '${IG_DST}' && npm install" 2>&1
+    ok "npm install complete"
+  fi
+else
+  ok "node_modules already present"
+fi
+
+# Smoke test
+SMOKE=$(sudo -u zorin bash -c "cd '${IG_DST}' && INTENT_GRAPH_DB='${IG_DB}' timeout 4 node intent-graph-mcp.js 2>&1"; echo "EXIT:$?")
+if echo "$SMOKE" | grep -q 'Error\|ERR_'; then
+  fail "intent-graph smoke test failed:\n${SMOKE}"
+fi
+ok "intent-graph smoke test PASS"
+
+# Wire into Claude Desktop config
+CLAUDE_CONFIG="${ZORIN_HOME}/.config/Claude/claude_desktop_config.json"
+mkdir -p "$(dirname "$CLAUDE_CONFIG")"
+
+sudo -u zorin python3 << PYEOF
+import json, os
+
+config_path = '${CLAUDE_CONFIG}'
+node_bin    = '${NODE_BIN}'
+ig_mcp      = '${IG_DST}/intent-graph-mcp.js'
+ig_db       = '${IG_DB}'
+
+try:
+    with open(config_path) as f:
+        cfg = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    cfg = {}
+
+cfg.setdefault('mcpServers', {})
+
+new_entry = {
+    'command': node_bin,
+    'args': [ig_mcp],
+    'env': {'INTENT_GRAPH_DB': ig_db}
+}
+
+if cfg['mcpServers'].get('intent-graph') != new_entry:
+    cfg['mcpServers']['intent-graph'] = new_entry
+    with open(config_path, 'w') as f:
+        json.dump(cfg, f, indent=2)
+    print('  Config updated')
+else:
+    print('  Config already current')
+PYEOF
+
+ok "intent-graph wired into Claude Desktop config"
+
 # ─── Done ─────────────────────────────────────────────────────────────────────
 
 echo ""
 echo -e "${GREEN}==========================================${NC}"
-echo -e "${GREEN}  exec-bridge v3 bootstrap complete!${NC}"
+echo -e "${GREEN}  Bootstrap complete!${NC}"
 echo -e "${GREEN}==========================================${NC}"
 echo ""
-echo "  One service, two queues:"
-echo "    ~/.exec-bridge/req-{id}.json          -> runs as zorin (uid 1000)"
-echo "    ~/.exec-bridge/elevated/req-{id}.json -> runs as root"
+echo "  exec-bridge v3 -- one service, two queues:"
+echo "    ~/.exec-bridge/req-{id}.json          -> zorin (uid 1000)"
+echo "    ~/.exec-bridge/elevated/req-{id}.json -> root"
+echo ""
+echo "  intent-graph MCP:"
+echo "    Deployed to : ${IG_DST}"
+echo "    Database    : ${IG_DB}"
+echo "    MCP server  : intent-graph (in Claude Desktop config)"
+echo ""
+echo "  Restart Claude Desktop to activate intent-graph."
 echo ""
 echo "  Request:  { id, cmd, cwd?, env?, timeout_ms? }"
 echo "  Response: { id, stdout, stderr, exit_code, duration_ms, ts }"
