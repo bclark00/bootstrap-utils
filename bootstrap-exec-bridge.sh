@@ -34,6 +34,9 @@ fail() { echo -e "${RED}  [!!] $*${NC}"; exit 1; }
 
 [[ $EUID -eq 0 ]] || fail "Run as root: sudo bash $0"
 
+# Allow root to operate on zorin-owned git repos without ownership errors
+git config --global --add safe.directory '*' 2>/dev/null || true
+
 # ─── Detect NVM node ─────────────────────────────────────────────────────────
 
 NVM_VERSIONS="${ZORIN_HOME}/.nvm/versions/node"
