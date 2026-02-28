@@ -106,13 +106,22 @@ export class ClaudeAIClient {
   }
 
   // ── Extract clean messages from conversation ────────────────────────────────
+  // Captures text content, inline artifacts (code blocks), and file attachments.
   extractMessages(conversation) {
     const msgs = conversation.chat_messages || [];
     return msgs.map(m => ({
-      role:       m.sender === 'human' ? 'user' : 'assistant',
-      text:       m.text || '',
-      created_at: m.created_at,
-      uuid:       m.uuid,
+      role:        m.sender === 'human' ? 'user' : 'assistant',
+      text:        m.text || '',
+      created_at:  m.created_at,
+      uuid:        m.uuid,
+      // Inline artifacts (application/vnd.ant.code etc.) embedded in assistant messages
+      artifacts:   (m.content || [])
+                     .filter(b => b.type === 'tool_result' || (b.artifact?.type))
+                     .map(b => b.artifact).filter(Boolean)
+                   .concat(m.attachments?.filter(a => a.file_type === 'application/vnd.ant.code' ||
+                                                       a.file_type?.startsWith('application/vnd.ant')) || []),
+      // Uploaded file attachments (non-artifact)
+      files:       (m.attachments || []).filter(a => !a.file_type?.startsWith('application/vnd.ant')),
     }));
   }
 
@@ -191,6 +200,73 @@ export class ClaudeAIClient {
     return full;
   }
 
+  // ── Wiggle: list files attached to a conversation ─────────────────────────
+  // Returns array of { name, size, type } for uploaded file attachments.
+  // These are discrete files (PDFs, markdown, code) uploaded by the user,
+  // distinct from inline artifacts embedded in message content.
+  async listFiles(uuid) {
+    const path = `/api/organizations/${this.orgId}/conversations/${uuid}/wiggle/list-files?prefix=`;
+    try {
+      const data = await this._get(path);
+      return Array.isArray(data) ? data : (data.files || []);
+    } catch (e) {
+      // 404 = no files attached to this conversation
+      if (e.message.includes('404')) return [];
+      throw e;
+    }
+  }
+
+  // ── Wiggle: download a specific attached file ───────────────────────────────
+  // Returns the raw file content as a string (text files) or base64 (binary).
+  // Caller should check content-type to decide how to handle.
+  async downloadFile(uuid, filename) {
+    const encoded = encodeURIComponent(filename);
+    const path = `/api/organizations/${this.orgId}/conversations/${uuid}/wiggle/download?file=${encoded}`;
+    const url = `${CLAUDE_BASE}${path}`;
+    const res = await fetch(url, { headers: this.headers });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`claude.ai wiggle ${res.status}: ${filename}\n${body.slice(0, 200)}`);
+    }
+    const contentType = res.headers?.get?.('content-type') || '';
+    const isBinary = !contentType.startsWith('text/') &&
+                     !contentType.includes('json') &&
+                     !contentType.includes('javascript') &&
+                     !contentType.includes('xml');
+    if (isBinary) {
+      // Return base64 for binary files (PDFs, images, etc.)
+      const buf = await res.arrayBuffer();
+      return {
+        filename,
+        contentType,
+        encoding: 'base64',
+        content: Buffer.from(buf).toString('base64'),
+      };
+    }
+    return {
+      filename,
+      contentType,
+      encoding: 'utf8',
+      content: await res.text(),
+    };
+  }
+
+  // ── Wiggle: get all files for a conversation with content ───────────────────
+  async getAllFiles(uuid) {
+    const files = await this.listFiles(uuid);
+    const results = [];
+    for (const f of files) {
+      try {
+        const dl = await this.downloadFile(uuid, f.name);
+        results.push({ ...f, ...dl });
+        await sleep(100);
+      } catch (e) {
+        results.push({ ...f, error: e.message });
+      }
+    }
+    return results;
+  }
+
   // ── Snippet helper ──────────────────────────────────────────────────────────
   _snippet(text, terms, window = 150) {
     for (const term of terms) {
@@ -213,6 +289,11 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 export function makeBootstrapTools(client) {
   return {
+    // Direct wiggle access: list and download files from a conversation
+    async getConversationFiles(uuid) {
+      return client.getAllFiles(uuid);
+    },
+
     // Replacement for conversation_search tool
     async conversationSearch(query, maxResults = 5) {
       try {
