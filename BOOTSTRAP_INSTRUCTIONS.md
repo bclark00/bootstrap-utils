@@ -94,7 +94,7 @@ After bootstrap completes, these tools are available in `tools/`:
 
 ### claude-query.mjs (CAP-010)
 
-Direct Claude API and conversation retrieval. Zero npm dependencies.
+Direct Claude API and conversation retrieval. Zero npm dependencies. No npm install needed.
 
 ```bash
 # Inference — API key from Memory item 2
@@ -108,10 +108,20 @@ CLAUDE_SESSION_KEY=<sid> CLAUDE_ORG_UUID=<uuid from Stage 2> \
 # List recent chats
 CLAUDE_SESSION_KEY=<sid> CLAUDE_ORG_UUID=<uuid from Stage 2> \
   node tools/claude-query.mjs list-chats
+
+# Extract an RFC (or any artifact) from a past session by search term
+# Use this when a file was written in-session but never committed to git
+CLAUDE_SESSION_KEY=<sid> CLAUDE_ORG_UUID=<uuid from Stage 2> \
+  node tools/claude-query.mjs fetch-rfc <conversation-uuid> "RFC-BER-001"
+
+# Full-text search across recent conversations
+CLAUDE_SESSION_KEY=<sid> CLAUDE_ORG_UUID=<uuid from Stage 2> \
+  node tools/claude-query.mjs search "RFC-BER-001 canonical" --limit 5
 ```
 
 Use instead of `conversation_search` when full message history is needed.
 `conversation_search` returns snippets only. `get-chat` returns every token.
+`fetch-rfc` is the recovery path when work was done in a session but not committed to git.
 
 ---
 
